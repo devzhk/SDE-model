@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import Adam
+from torch.optim.lr_scheduler import MultiStepLR
+
 
 from torchvision.utils import save_image
 
@@ -44,10 +46,11 @@ model = FNN2d(modes1=modes1, modes2=modes1,
               activation=activation, in_dim=1).to(device)
 # define optimizer and criterion
 optimizer = Adam(model.parameters(), lr=5e-4)
+scheduler = MultiStepLR(optimizer, milestones=[300, 450, 600, 750], gamma=0.5)
 criterion = nn.MSELoss()
 # train
 # hyperparameter
-num_epoch = 500
+num_epoch = 1000
 model.train()
 
 pbar = tqdm(list(range(num_epoch)), dynamic_ncols=True)
@@ -64,7 +67,7 @@ for e in pbar:
         loss.backward()
         optimizer.step()
         train_loss += loss.item()
-
+    scheduler.step()
     train_loss /= len(train_loader)
     pbar.set_description(
         (
