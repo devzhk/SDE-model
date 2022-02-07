@@ -43,7 +43,7 @@ model = FNN2d(modes1=modes1, modes2=modes1,
               fc_dim=fc_dim, layers=layers,
               activation=activation, in_dim=1).to(device)
 # define optimizer and criterion
-optimizer = Adam(model.parameters(), lr=2e-4)
+optimizer = Adam(model.parameters(), lr=5e-4)
 criterion = nn.MSELoss()
 # train
 # hyperparameter
@@ -71,7 +71,7 @@ for e in pbar:
             f'Epoch :{e}, Loss: {train_loss}'
         )
     )
-    samples = image.clamp(0.0, 1.0)
+    samples = pred.clamp(0.0, 1.0)
     save_image(samples, f'figs/train_{e}.png', nrow=int(np.sqrt(batchsize)))
 
 
