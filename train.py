@@ -36,7 +36,7 @@ batchsize = 400
 # construct dataset
 # dataset = myOdeData('data/data.pt')
 base_dir = 'exp/seed1234/'
-dataset = myOdeData(f'data/test_data.pt')
+dataset = myOdeData(f'data/test_data_50k.pt')
 train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=True)
 
 # define operator for solving SDE
@@ -53,12 +53,12 @@ model = FNN2d(modes1=modes1, modes2=modes1,
               in_dim=3, out_dim=3,
               activation=activation).to(device)
 # define optimizer and criterion
-optimizer = Adam(model.parameters(), lr=5e-4)
-scheduler = MultiStepLR(optimizer, milestones=[300, 450, 600, 750], gamma=0.5)
+optimizer = Adam(model.parameters(), lr=1e-3)
+scheduler = MultiStepLR(optimizer, milestones=[40, 80, 120, 160], gamma=0.5)
 criterion = nn.MSELoss()
 # train
 # hyperparameter
-num_epoch = 1000
+num_epoch = 200
 model.train()
 
 pbar = tqdm(list(range(num_epoch)), dynamic_ncols=True)
@@ -89,14 +89,12 @@ for e in pbar:
         )
     )
 
-    if e % 10 == 0:
+    if e % 20 == 0:
         # samples = pred.clamp(0.0, 1.0)
         if batchsize > 100:
             image, pred = image[:100], pred[:100]  # first 100
         save_image((image + 1) * 0.5, f'{save_img_dir}/train_{e}_sample.png', nrow=int(np.sqrt(image.shape[0])))
         save_image((pred + 1) * 0.5, f'{save_img_dir}/train_{e}_pred.png', nrow=int(np.sqrt(pred.shape[0])))
-
-    if e % 100 == 0:
         torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_{e}.pt')
 
 torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_final.pt')
