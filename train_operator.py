@@ -6,12 +6,12 @@ from torch.utils.data import Dataset, DataLoader
 from utils.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
 
-
 from torchvision.utils import save_image
 
 from tqdm import tqdm
 
 from models.fno import FNN1d
+from models.timeConv import TimeConv
 
 
 class myODE(Dataset):
@@ -33,7 +33,7 @@ class myODE(Dataset):
 
 def run(configs=None):
     dim = 3 * 32 * 32
-    batchsize = 64
+    batchsize = 16
     num_epoch = 2000
     base_dir = 'exp/seed1234/'
     save_img_dir = f'{base_dir}/figs'
@@ -48,17 +48,17 @@ def run(configs=None):
     train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=True, drop_last=True)
 
     # define operator for solving SDE
-    layers = [128, 128, 128, 128]
+    layers = [dim, dim, dim]
     modes1 = [8, 8, 8]
-    fc_dim = 1024
+    fc_dim = dim
     activation = 'gelu'
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    model = FNN1d(modes=modes1,
-                  fc_dim=fc_dim,
-                  layers=layers,
-                  activation=activation,
-                  in_dim=dim, out_dim=dim).to(device)
+    model = TimeConv(modes=modes1,
+                     fc_dim=fc_dim,
+                     layers=layers,
+                     activation=activation,
+                     in_dim=dim, out_dim=dim).to(device)
     # define optimizer and criterion
     optimizer = Adam(model.parameters(), lr=5e-4)
     scheduler = MultiStepLR(optimizer, milestones=[500, 800, 1200, 1600], gamma=0.5)
@@ -102,9 +102,3 @@ def run(configs=None):
 if __name__ == '__main__':
     torch.backends.cudnn.benchmark = True
     run()
-
-
-
-
-
-
