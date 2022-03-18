@@ -55,32 +55,6 @@ model.train()
 
 pbar = tqdm(list(range(num_epoch)), dynamic_ncols=True)
 
-for e in pbar:
-    train_loss = 0
-    for code, image in train_loader:
-        code = code.to(device)
-        image = image.to(dtype=torch.float32, device=device)
-        pred = model(code)
-        loss = criterion(pred, image)
-        # update model
-        model.zero_grad()
-        loss.backward()
-        optimizer.step()
-        train_loss += loss.item()
-    scheduler.step()
-    train_loss /= len(train_loader)
-    pbar.set_description(
-        (
-            f'Epoch :{e}, Loss: {train_loss}'
-        )
-    )
-    samples = pred.clamp(0.0, 1.0)
-    save_image(samples, f'figs/train_{e}.png', nrow=int(np.sqrt(batchsize)))
-
-
-
-torch.save(model.state_dict(), 'ckpts/solver-model.pt')
-
 
 
 

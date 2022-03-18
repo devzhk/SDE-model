@@ -1,95 +1,78 @@
-import numpy as np
-
-import torch
 import torch.nn as nn
-
 import torch.nn.functional as F
+from .base import SpectralConv1d, SpectralConv2d
+'''
+FNO 1d
+'''
 
+class FNN1d(nn.Module):
+    def __init__(self,
+                 modes, width=32,
+                 layers=None,
+                 fc_dim=128,
+                 in_dim=3, out_dim=1,
+                 activation='relu'):
+        super(FNN1d, self).__init__()
 
-def compl_mul2d(a, b):
-    # (batch, in_channel, x,y,t ), (in_channel, out_channel, x,y,t) -> (batch, out_channel, x,y,t)
-    return torch.einsum("bixy,ioxy->boxy", a, b)
+        """
+        The overall network. It contains several layers of the Fourier layer.
+        1. Lift the input to the desire channel dimension by self.fc0 .
+        2. 4 layers of the integral operators u' = (W + K)(u).
+            W defined by self.w; K defined by self.conv .
+        3. Project from the channel space to the output space by self.fc1 and self.fc2 .
 
-################################################################
-# 2d fourier layer
-################################################################
+        input: the solution of the initial condition and location (a(x), x)
+        input shape: (batchsize, x=s, c=2)
+        output: the solution of a later timestep
+        output shape: (batchsize, x=s, c=1)
+        """
 
+        self.modes1 = modes
+        self.width = width
+        if layers is None:
+            layers = [width] * 4
 
-class SpectralConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, modes1, modes2):
-        super(SpectralConv2d, self).__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        # Number of Fourier modes to multiply, at most floor(N/2) + 1
-        self.modes1 = modes1
-        self.modes2 = modes2
+        self.fc0 = nn.Linear(in_dim, layers[0])  # input channel is 2: (a(x), x)
 
-        self.scale = (1 / (in_channels * out_channels))
-        self.weights1 = nn.Parameter(
-            self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
-        self.weights2 = nn.Parameter(
-            self.scale * torch.rand(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat))
+        self.sp_convs = nn.ModuleList([SpectralConv1d(
+            in_size, out_size, self.modes1) for in_size, out_size in zip(layers, layers[1:])])
 
-    def forward(self, x, gridy=None):
-        batchsize = x.shape[0]
-        size1 = x.shape[-2]
-        size2 = x.shape[-1]
-        # Compute Fourier coeffcients up to factor of e^(- something constant)
-        x_ft = torch.fft.rfftn(x, dim=[2, 3])
+        self.ws = nn.ModuleList([nn.Conv1d(in_size, out_size, 1)
+                                 for in_size, out_size in zip(layers, layers[1:])])
 
-        if gridy is None:
-            # Multiply relevant Fourier modes
-            out_ft = torch.zeros(batchsize, self.out_channels, x.size(-2), x.size(-1) // 2 + 1, device=x.device,
-                                 dtype=torch.cfloat)
-            out_ft[:, :, :self.modes1, :self.modes2] = \
-                compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
-            out_ft[:, :, -self.modes1:, :self.modes2] = \
-                compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
-
-            # Return to physical space
-            x = torch.fft.irfftn(out_ft, s=(x.size(-2), x.size(-1)), dim=[2, 3])
+        self.fc1 = nn.Linear(layers[-1], fc_dim)
+        self.fc2 = nn.Linear(fc_dim, out_dim)
+        if activation == 'tanh':
+            self.activation = F.tanh
+        elif activation == 'gelu':
+            self.activation = F.gelu
+        elif activation == 'relu':
+            self.activation == F.relu
         else:
-            factor1 = compl_mul2d(x_ft[:, :, :self.modes1, :self.modes2], self.weights1)
-            factor2 = compl_mul2d(x_ft[:, :, -self.modes1:, :self.modes2], self.weights2)
-            x = self.ifft2d(gridy, factor1, factor2, self.modes1, self.modes2) / (size1 * size2)
+            raise ValueError(f'{activation} is not supported')
+
+    def forward(self, x):
+        length = len(self.ws)
+
+        x = self.fc0(x)
+        x = x.permute(0, 2, 1)
+
+        for i, (speconv, w) in enumerate(zip(self.sp_convs, self.ws)):
+            x1 = speconv(x)
+            x2 = w(x)
+            x = x1 + x2
+            if i != length - 1:
+                x = self.activation(x)
+
+        x = x.permute(0, 2, 1)
+        x = self.fc1(x)
+        x = self.activation(x)
+        x = self.fc2(x)
         return x
 
-    def ifft2d(self, gridy, coeff1, coeff2, k1, k2):
-
-        # y (batch, N, 2) locations in [0,1]*[0,1]
-        # coeff (batch, channels, kmax, kmax)
-
-        batchsize = gridy.shape[0]
-        N = gridy.shape[1]
-        device = gridy.device
-        m1 = 2 * k1
-        m2 = 2 * k2 - 1
-
-        # wavenumber (m1, m2)
-        k_x1 =  torch.cat((torch.arange(start=0, end=k1, step=1), \
-                            torch.arange(start=-(k1), end=0, step=1)), 0).reshape(m1,1).repeat(1,m2).to(device)
-        k_x2 =  torch.cat((torch.arange(start=0, end=k2, step=1), \
-                            torch.arange(start=-(k2-1), end=0, step=1)), 0).reshape(1,m2).repeat(m1,1).to(device)
-
-        # K = <y, k_x>,  (batch, N, m1, m2)
-        K1 = torch.outer(gridy[:,:,0].view(-1), k_x1.view(-1)).reshape(batchsize, N, m1, m2)
-        K2 = torch.outer(gridy[:,:,1].view(-1), k_x2.view(-1)).reshape(batchsize, N, m1, m2)
-        K = K1 + K2
-
-        # basis (N, m1, m2)
-        basis = torch.exp( 1j * 2* np.pi * K).to(device)
-
-        # coeff (batch, channels, m1, m2)
-        coeff3 = coeff1[:,:,1:,1:].flip(-1, -2).conj()
-        coeff4 = torch.cat([coeff1[:,:,0:1,1:].flip(-1).conj(), coeff2[:,:,:,1:].flip(-1, -2).conj()], dim=-2)
-        coeff12 = torch.cat([coeff1, coeff2], dim=-2)
-        coeff43 = torch.cat([coeff4, coeff3], dim=-2)
-        coeff = torch.cat([coeff12, coeff43], dim=-1)
-
-        # Y (batch, channels, N)
-        Y = torch.einsum("bcxy,bnxy->bcn", coeff, basis)
-        Y = Y.real
-        return Y
+'''
+FNO 2d
+'''
 
 
 class FNN2d(nn.Module):
