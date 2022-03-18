@@ -35,7 +35,7 @@ class FNN1d(nn.Module):
         self.fc0 = nn.Linear(in_dim, layers[0])  # input channel is 2: (a(x), x)
 
         self.sp_convs = nn.ModuleList([SpectralConv1d(
-            in_size, out_size, self.modes1) for in_size, out_size in zip(layers, layers[1:])])
+            in_size, out_size, num_modes) for in_size, out_size, num_modes in zip(layers, layers[1:], self.modes1)])
 
         self.ws = nn.ModuleList([nn.Conv1d(in_size, out_size, 1)
                                  for in_size, out_size in zip(layers, layers[1:])])
