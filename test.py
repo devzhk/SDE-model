@@ -12,7 +12,7 @@ from torchvision.utils import save_image
 
 from tqdm import tqdm
 
-from models.fno import FNN2d, FNN1d
+from models.fno import FNN1d
 
 from utils.helper import kde, group_kde
 
@@ -39,13 +39,13 @@ class myOdeData(Dataset):
         return self.data.shape[0]
 
 
-batchsize = 100
+batchsize = 1000
 t_dim = 50
 # construct dataset
 # dataset = myOdeData('data/data.pt')
 base_dir = 'exp/1dGM_seed1234/'
-dataset = myOdeData(f'data/1dgm.pt')
-train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=False)
+dataset = myOdeData(f'data/1dgm-test.pt')
+test_loader = DataLoader(dataset, batch_size=batchsize, shuffle=False)
 
 # define operator for solving SDE
 layers = [2, 2, 2]
@@ -61,19 +61,14 @@ model = FNN1d(modes=modes1,
               in_dim=2, out_dim=1,
               activation=activation).to(device)
 # define optimizer and criterion
-optimizer = Adam(model.parameters(), lr=1e-3)
-scheduler = MultiStepLR(optimizer, milestones=[100, 200, 300, 400], gamma=0.5)
+ckpt = torch.load('exp/1dGM_seed1234/ckpts/solver-model_final.pt')
+model.load_state_dict(ckpt)
 criterion = nn.MSELoss()
 # train
 # hyperparameter
-num_epoch = 500
-model.train()
-
 epsilon = 1e-5
 t0, t1 = 1., epsilon
 ts = torch.linspace(t0, t1, t_dim)
-
-pbar = tqdm(list(range(num_epoch)), dynamic_ncols=True)
 
 save_img_dir = f'{base_dir}/figs'
 os.makedirs(save_img_dir, exist_ok=True)
@@ -81,35 +76,20 @@ os.makedirs(save_img_dir, exist_ok=True)
 save_ckpt_dir = f'{base_dir}/ckpts'
 os.makedirs(save_ckpt_dir, exist_ok=True)
 
-for e in pbar:
-    train_loss = 0
-    for states in train_loader:
-        in_state = get_init(states, ts)
+model.eval()
+test_err = 0
+for states in test_loader:
+    in_state = get_init(states, ts)
 
-        pred = model(in_state)
-        loss = criterion(pred, states)
-        # update model
-        model.zero_grad()
-        loss.backward()
-        optimizer.step()
-        train_loss += loss.item()
-    scheduler.step()
-    train_loss /= len(train_loader)
-    pbar.set_description(
-        (
-            f'Epoch :{e}, Loss: {train_loss}'
-        )
-    )
+    pred = model(in_state)
+    loss = criterion(pred, states)
+    # update model
+    test_err += loss.item()
 
-    if e % 50 == 0:
-        zip_state = [pred[:, -1, 0].detach().numpy(), states[:, -1, 0].detach().numpy()]
-        labels = ['Prediction', 'Truth']
-        group_kde(zip_state, labels, f'figs/1dGM/train_{e}.png')
-        # kde(pred[:, -1, 0].detach().numpy(), f'figs/1dGM/pred_{e}.png')
-        # kde(states[:, -1, 0].detach().numpy(), f'figs/1dGM/true_{e}.png')
-        torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_{e}.pt')
+print(f'Test Mean squared error: {test_err}')
+
 
 zip_state = [pred[:, -1, 0].detach().numpy(), states[:, -1, 0].detach().numpy()]
 labels = ['Prediction', 'Truth']
-group_kde(zip_state, labels, f'figs/1dGM/train_final.png')
-torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_final.pt')
+group_kde(zip_state, labels, f'figs/1dGM/test.png')
+

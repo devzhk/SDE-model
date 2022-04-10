@@ -10,7 +10,7 @@ class FNN1d(nn.Module):
                  modes, width=32,
                  layers=None,
                  fc_dim=128,
-                 in_dim=3, out_dim=1,
+                 in_dim=2, out_dim=1,
                  activation='relu'):
         super(FNN1d, self).__init__()
 

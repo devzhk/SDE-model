@@ -13,7 +13,7 @@ from utils.helper import kde
 
 
 class Gmm_score(object):
-    def __init__(self, mu=1.0, num_modes=4, sigma2=0.01, beta_min=0.1, beta_max=20.):
+    def __init__(self, mu=1.0, num_modes=2, sigma2=0.01, beta_min=0.1, beta_max=20.):
 
         self.mus = np.linspace(-mu, mu, num_modes)
         print(f'mu: {mu}, num_modes: {num_modes}, sigma2: {sigma2}')
@@ -35,8 +35,9 @@ class Gmm_score(object):
         mus_t = mus * torch.sqrt(alpha_t)  # [num_modes, 2]
 
         sigma2s_t = (1 - (1 - self.sigma2) * alpha_t) * torch.ones_like(mus).float()  # [num_modes, 2]
-
-        mix = D.Categorical(torch.ones(self.num_modes,).to(t.device))
+        mix_weights = torch.ones(self.num_modes,).to(t.device)
+        # mix_weights = torch.tensor([1.0, 2], device=t.device)
+        mix = D.Categorical(mix_weights)
         comp = D.Independent(D.Normal(loc=mus_t, scale=torch.sqrt(sigma2s_t)), 1)
         gmm = D.MixtureSameFamily(mix, comp)
 
@@ -60,7 +61,7 @@ class Gmm_score(object):
         mu_t_i = mu_i * torch.sqrt(alpha_t)  # [2]
         Sigma2_t = (1 - (1 - self.sigma2) * alpha_t) * torch.eye(1).to(t.device)
 
-        d_gs_t_i = D.Normal(mu_t_i, Sigma2_t)
+        d_gs_t_i = D.Normal(mu_t_i, torch.sqrt(Sigma2_t))
         return d_gs_t_i
 
     def _get_gs_score_at_t_i(self, t, idx, x_t):
@@ -85,7 +86,7 @@ class Gmm_score(object):
             gs_scores.append(gs_score_i)
 
         # print(gs_scores)
-        score = sum([p.unsqueeze(1) * s for (p, s) in zip(probs, gs_scores)]) / sum(probs).unsqueeze(1)  # [bs, 2]
+        score = sum([p * s for (p, s) in zip(probs, gs_scores)]) / sum(probs)  # [bs, 2]
 
         '''
         # log prob
