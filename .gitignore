@@ -1,3 +1,9 @@
 .idea
 .vscode
 exp
+data
+ckpts
+.DS_Store
+figs
+__pycache__
+utils/__pycache__

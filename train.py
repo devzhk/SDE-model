@@ -43,6 +43,15 @@ class myOdeData(Dataset):
 def train(model, criterion,
           optimizer, scheduler,
           dataloader, device, config):
+    
+    logname = config['logname']
+    # prepare log dir
+    base_dir = f'exp/{logname}/'
+    save_img_dir = f'{base_dir}/figs'
+    os.makedirs(save_img_dir, exist_ok=True)
+
+    save_ckpt_dir = f'{base_dir}/ckpts'
+    os.makedirs(save_ckpt_dir, exist_ok=True)
 
     t0, t1 = 1., config['epsilon']
     ts = torch.linspace(t0, t1, t_dim)
@@ -106,14 +115,7 @@ if __name__ == '__main__':
     batchsize = config['batchsize']
     t_dim = config['t_dim']
     dimension = config['dimension']
-    logname = config['logname']
-    # prepare log dir
-    base_dir = f'exp/{logname}/'
-    save_img_dir = f'{base_dir}/figs'
-    os.makedirs(save_img_dir, exist_ok=True)
-
-    save_ckpt_dir = f'{base_dir}/ckpts'
-    os.makedirs(save_ckpt_dir, exist_ok=True)
+    
     #
     dataset = myOdeData(config['datapath'])
     train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=False)
@@ -132,74 +134,3 @@ if __name__ == '__main__':
           optimizer, scheduler,
           train_loader, device, config)
 
-# construct dataset
-# dataset = myOdeData('data/data.pt')
-
-
-
-# define operator for solving SDE
-layers = [2, 2, 2]
-modes1 = [6, 6]
-modes2 = [6, 6]
-fc_dim = 2
-activation = 'gelu'
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-print(f'device: {device}')
-
-
-
-
-# train
-# hyperparameter
-num_epoch = 500
-model.train()
-
-epsilon = 1e-5
-t0, t1 = 1., epsilon
-ts = torch.linspace(t0, t1, t_dim)
-
-pbar = tqdm(list(range(num_epoch)), dynamic_ncols=True)
-
-
-
-for e in pbar:
-    train_loss = 0
-    for states in train_loader:
-        in_state = get_init(states, ts)
-
-        pred = model(in_state)
-        loss = criterion(pred, states)
-        # update model
-        model.zero_grad()
-        loss.backward()
-        optimizer.step()
-        train_loss += loss.item()
-    scheduler.step()
-    train_loss /= len(train_loader)
-    pbar.set_description(
-        (
-            f'Epoch :{e}, Loss: {train_loss}'
-        )
-    )
-
-    if e % 50 == 0:
-        if dimension == 1:
-            zip_state = [pred[:, -1, 0].detach().numpy(), states[:, -1, 0].detach().numpy()]
-            labels = ['Prediction', 'Truth']
-            group_kde(zip_state, labels, f'{save_img_dir}/train_{e}.png')
-        elif dimension == 2:
-            kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_{e}_pred.png', dim=2)
-            kde(states[:, -1, :], save_file=f'{save_img_dir}/train_{e}_truth.png', dim=2)
-        # kde(pred[:, -1, 0].detach().numpy(), f'figs/1dGM/pred_{e}.png')
-        # kde(states[:, -1, 0].detach().numpy(), f'figs/1dGM/true_{e}.png')
-        torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_{e}.pt')
-
-if dimension == 1:
-    zip_state = [pred[:, -1, 0].detach().numpy(), states[:, -1, 0].detach().numpy()]
-    labels = ['Prediction', 'Truth']
-    group_kde(zip_state, labels, f'{save_img_dir}/train_final.png')
-elif dimension == 2:
-    kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_final_pred.png', dim=2)
-    kde(states[:, -1, :], save_file=f'{save_img_dir}/train_final_truth.png', dim=2)
-
-torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_final.pt')
