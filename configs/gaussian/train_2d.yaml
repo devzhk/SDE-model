@@ -1,0 +1,18 @@
+# data configuration
+datapath: data/2D-25gm-train.pt
+# training
+batchsize: 500
+t_dim: 50
+dimension: 2
+epsilon: 0.00001
+milestone: [100, 200, 300, 400]
+
+# model
+layers: [2, 2, 2]
+modes: [6, 6]
+fc_dim: 2
+activation: 'gelu'
+
+
+# log
+logname: train-seed0414

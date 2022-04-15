@@ -38,13 +38,13 @@ class myOdeData(Dataset):
     def __len__(self):
         return self.data.shape[0]
 
-
-batchsize = 1000
+dimension = 2
+batchsize = 50000
 t_dim = 50
 # construct dataset
 # dataset = myOdeData('data/data.pt')
-base_dir = 'exp/1dGM_seed1234/'
-dataset = myOdeData(f'data/1dgm-test.pt')
+base_dir = f'exp/{dimension}Dgm_seed551'
+dataset = myOdeData(f'data/{dimension}Dgm-25gm-test.pt')
 test_loader = DataLoader(dataset, batch_size=batchsize, shuffle=False)
 
 # define operator for solving SDE
@@ -58,10 +58,10 @@ print(f'device: {device}')
 
 model = FNN1d(modes=modes1,
               fc_dim=fc_dim, layers=layers,
-              in_dim=2, out_dim=1,
+              in_dim=dimension + 1, out_dim=dimension,
               activation=activation).to(device)
 # define optimizer and criterion
-ckpt = torch.load('exp/1dGM_seed1234/ckpts/solver-model_final.pt')
+ckpt = torch.load(f'{base_dir}/ckpts/solver-model_final.pt')
 model.load_state_dict(ckpt)
 criterion = nn.MSELoss()
 # train
@@ -88,8 +88,10 @@ for states in test_loader:
 
 print(f'Test Mean squared error: {test_err}')
 
-
-zip_state = [pred[:, -1, 0].detach().numpy(), states[:, -1, 0].detach().numpy()]
-labels = ['Prediction', 'Truth']
-group_kde(zip_state, labels, f'figs/1dGM/test.png')
-
+if dimension == 1:
+    zip_state = [pred[:, -1, 0].detach().numpy(), states[:, -1, 0].detach().numpy()]
+    labels = ['Prediction', 'Truth']
+    group_kde(zip_state, labels, f'figs/2DGM/test.png')
+elif dimension == 2:
+    kde(pred[:, -1, :], save_file=f'{save_img_dir}/test_pred.png', dim=2)
+    kde(states[:, -1, :], save_file=f'{save_img_dir}/test_truth.png', dim=2)

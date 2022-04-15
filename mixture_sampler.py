@@ -6,6 +6,7 @@ import numpy as np
 
 import torch
 import torch.distributions as D
+import torch.nn.functional as F
 
 from torchdiffeq import odeint_adjoint
 
@@ -13,9 +14,19 @@ from utils.helper import kde
 
 
 class Gmm_score(object):
-    def __init__(self, mu=1.0, num_modes=2, sigma2=0.01, beta_min=0.1, beta_max=20.):
+    def __init__(self, mu=2.0, num_modes=2, sigma2=0.01, beta_min=0.1, beta_max=20., dim=1):
 
-        self.mus = np.linspace(-mu, mu, num_modes)
+        if dim == 1:
+            self.mus = torch.linspace(-mu, mu, num_modes).unsqueeze(-1)
+        elif dim == 2:
+            xs = torch.linspace(-mu, mu, int(np.sqrt(num_modes)))
+            ys = torch.linspace(-mu, mu, int(np.sqrt(num_modes)))
+            x, y = torch.meshgrid(xs, ys, indexing='xy')
+            self.mus = torch.stack([x.reshape(-1), y.reshape(-1)], dim=1)
+            # self.mus = torch.tensor([[mu, mu],
+            #                          [mu, -mu],
+            #                          [-mu, mu],
+            #                          [-mu, -mu]])
         print(f'mu: {mu}, num_modes: {num_modes}, sigma2: {sigma2}')
 
         assert len(self.mus) == num_modes
@@ -30,7 +41,7 @@ class Gmm_score(object):
     def sample(self, t, batch_size):
         assert isinstance(t, torch.Tensor) and t.ndim == 0
 
-        mus = torch.tensor(self.mus).float().to(t.device)  # [num_modes, 2]
+        mus = self.mus.to(t.device)  # [num_modes, 2]
         alpha_t = self.alphas_t(t)
         mus_t = mus * torch.sqrt(alpha_t)  # [num_modes, 2]
 
@@ -38,7 +49,7 @@ class Gmm_score(object):
         mix_weights = torch.ones(self.num_modes,).to(t.device)
         # mix_weights = torch.tensor([1.0, 2], device=t.device)
         mix = D.Categorical(mix_weights)
-        comp = D.Independent(D.Normal(loc=mus_t, scale=torch.sqrt(sigma2s_t)), 1)
+        comp = D.Independent(D.MultivariateNormal(loc=mus_t, covariance_matrix=sigma2s_t * torch.eye(mus.shape[1])), 1)
         gmm = D.MixtureSameFamily(mix, comp)
 
         samples = gmm.sample([batch_size])  # [bs, 2]
@@ -74,19 +85,51 @@ class Gmm_score(object):
 
     def score(self, t, x_t):
         # x_t = self.sample(t, batch_size)  # [bs, 2]
+        mus = self.mus.to(x_t.device)
+        alpha_t = self.alphas_t(t)
+        mus_t = mus * torch.sqrt(alpha_t)  # [nm, 2]
+        sigma2_t = 1 - (1 - self.sigma2) * alpha_t
 
-        probs = []
-        gs_scores = []
-        for idx in range(self.num_modes):
-            gaussian_t_i = self._get_gaussian_at_t_i(t, idx)
-            prob_i = torch.exp(gaussian_t_i.log_prob(x_t))  # [bs]
-            probs.append(prob_i)
+        def pairwise_L2_square(a, b):
+            b = b.T
+            a2 = torch.sum(torch.square(a), dim=1, keepdim=True)
+            b2 = torch.sum(torch.square(b), dim=0, keepdim=True)
+            ab = torch.mm(a, b)
+            return a2 + b2 - 2 * ab
 
-            gs_score_i = self._get_gs_score_at_t_i(t, idx, x_t)  # [bs, 2]
-            gs_scores.append(gs_score_i)
+        logits_t = - pairwise_L2_square(x_t, mus_t) / (2 * sigma2_t)
 
-        # print(gs_scores)
-        score = sum([p * s for (p, s) in zip(probs, gs_scores)]) / sum(probs)  # [bs, 2]
+        def own_softmax(x):
+            maxes = torch.max(x, 1, keepdim=True)[0]
+            x_exp = torch.exp(x - maxes)
+            x_exp_sum = torch.sum(x_exp, 1, keepdim=True)
+            return x_exp / x_exp_sum
+
+        # gmm_coef_t = torch.softmax(logits_t, dim=1)  # [bs, mn]
+        gmm_coef_t = own_softmax(logits_t)  # [bs, mn]
+
+        score = -1 / sigma2_t * (x_t - torch.mm(gmm_coef_t, mus_t))
+
+        # alpha_t = self.alphas_t(t)
+        # mus_t = mus * torch.sqrt(alpha_t)
+        # sigma2_t = 1 - (1 - self.sigma2) * alpha_t
+        #
+        # diff_ti = x_t.unsqueeze(dim=1) - mus_t.unsqueeze(dim=0) # x_t (T, d), mus_t (M, d) -> broadcast -> diff_ti (T, M, d)
+        # logit_ti = torch.sum(diff_ti * diff_ti, dim=-1) / sigma2_t
+        # gm_ti = F.softmax(logit_ti, dim=1)
+        #
+        # score = (torch.mm(gm_ti, mus_t) - x_t) / sigma2_t
+
+        # for idx in range(self.num_modes):
+        #     gaussian_t_i = self._get_gaussian_at_t_i(t, idx)
+        #     prob_i = torch.exp(gaussian_t_i.log_prob(x_t))  # [bs]
+        #     probs.append(prob_i)
+        #
+        #     gs_score_i = self._get_gs_score_at_t_i(t, idx, x_t)  # [bs, 2]
+        #     gs_scores.append(gs_score_i)
+        #
+        # # print(gs_scores)
+        # score = sum([p * s for (p, s) in zip(probs, gs_scores)]) / sum(probs)  # [bs, 2]
 
         '''
         # log prob
@@ -207,5 +250,5 @@ class OdeDiffusion(torch.nn.Module):
 
         minutes, seconds = divmod(time.time() - start_time, 60)
         print("Sampling time: {:0>2}:{:05.2f}".format(int(minutes), seconds))
-
+        state_t = torch.stack(state_t, dim=1)
         return state_t

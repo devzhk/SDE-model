@@ -1,5 +1,5 @@
 from collections import OrderedDict
-
+import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
 
@@ -14,10 +14,14 @@ def remove_module(ckpt):
 # calculate gaussian kde estimate for a dataset
 def kde(data, # 1d array
         save_file="",
-        bw=0.1):
+        dim=1):
 
     fig = plt.figure(figsize=(6,6))
-    sns.kdeplot(data, bw=bw)
+    if dim == 1:
+        sns.kdeplot(data)
+    elif dim == 2:
+        df = pd.DataFrame(data.cpu().detach().numpy(), columns=['x', 'y'])
+        g = sns.jointplot(x='x', y='y', data=df, kind='kde', space=0, fill=True)
     # plt.scatter(mu, tau, s=4, cmap='viridis')
     # plt.xlim((-1.2, 1.2))
     # plt.ylim((-1.2, 1.2))
