@@ -1,19 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from utils.dataset import myODE
+import torch
+import pandas as pd
+import seaborn as sns
+from mixture_sampler import Gmm_score
+
+# datafile = torch.load('data/25gm-test-v6.pt')
+# data = datafile['data'][:, -1, :].cpu().numpy()
 
 
-dataset = myODE('data/ode_data_sd1.pt')
 
-ys = dataset.images.numpy().reshape(1000, -1).T
-xs = list(range(1000))
-pos = [10, 30, 40, 50, 65, 100]
-num_lines = 6
+df = pd.DataFrame(data, columns=['x', 'y'])
+g = sns.jointplot(x='x', y='y', data=df, kind='kde', space=0, fill=True)
 
-
-for i in range(num_lines):
-    line, = plt.plot(xs, ys[pos[i]])
-plt.legend()
-plt.ylabel('Pixel value')
-plt.xlabel('Time step')
-plt.savefig('figs/time.png')
+plt.show()

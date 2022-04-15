@@ -1,18 +1,20 @@
 # data configuration
-datapath: data/2D-25gm-train.pt
+datapath: data/25gm-train-v4.pt
 # training
-batchsize: 500
+num_epoch: 2000
+batchsize: 1000
 t_dim: 50
 dimension: 2
 epsilon: 0.00001
-milestone: [100, 200, 300, 400]
+milestone: [1000]
+t_step: 1
 
-# model
-layers: [2, 2, 2]
-modes: [6, 6]
-fc_dim: 2
+# model , 2, 6 - 4, 8
+layers: [16, 16, 16, 16]
+modes: [16, 16, 16]
+fc_dim: 8
 activation: 'gelu'
 
 
 # log
-logname: train-seed0414
+logname: gm-variance4

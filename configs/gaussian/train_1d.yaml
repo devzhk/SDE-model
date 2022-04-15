@@ -1,0 +1,20 @@
+# data configuration
+datapath: data/1dgm-train.pt
+# training
+num_epoch: 3000
+batchsize: 500
+t_dim: 50
+dimension: 1
+epsilon: 0.00001
+milestone: [2000]
+t_step: 1
+
+# model , 2, 6 - 4, 8
+layers: [2, 2, 2]
+modes: [4, 4]
+fc_dim: 2
+activation: 'gelu'
+
+
+# log
+logname: gm-1d

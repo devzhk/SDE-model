@@ -60,7 +60,9 @@ def train(model, criterion,
     for e in pbar:
         train_loss = 0
         for states in dataloader:
-            in_state = get_init(states, ts)
+            ini_state = states[:, 0:1, :].repeat(1, t_dim, 1)
+            in_state = get_init(ini_state, ts).to(device)
+            states = states.to(device)
 
             pred = model(in_state)
             loss = criterion(pred, states)
@@ -102,7 +104,7 @@ def train(model, criterion,
 
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
-    parser.add_argument('--config', type=str, help='configuration file')
+    parser.add_argument('--config', type=str, default='configs/gaussian/train_2d.yaml', help='configuration file')
     parser.add_argument('--log', action='store_true', help='turn on the wandb')
     args = parser.parse_args()
 

@@ -60,7 +60,9 @@ def eval(model, dataloader, criterion,
     with torch.no_grad():
         test_err = 0
         for states in dataloader:
-            in_state = get_init(states, ts)
+            ini_state = states[:, 0:1, :].repeat(1, t_dim, 1)
+            in_state = get_init(ini_state, ts).to(device)
+            states = states.to(device)
             pred = model(in_state)
 
             pred_list.append(pred)
@@ -80,7 +82,7 @@ def eval(model, dataloader, criterion,
     if dimension == 1:
         zip_state = [final_pred[:, -1, 0].detach().numpy(), final_states[:, -1, 0].detach().numpy()]
         labels = ['Prediction', 'Truth']
-        group_kde(zip_state, labels, f'figs/2DGM/test.png')
+        group_kde(zip_state, labels, f'{save_img_dir}/test.png')
     elif dimension == 2:
         kde(final_pred[:, -1, :], save_file=f'{save_img_dir}/test_pred.png', dim=2)
         kde(final_states[:, -1, :], save_file=f'{save_img_dir}/test_truth.png', dim=2)
@@ -88,7 +90,7 @@ def eval(model, dataloader, criterion,
 
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
-    parser.add_argument('--config', type=str, help='configuration file')
+    parser.add_argument('--config', type=str, default='configs/gaussian/test_2d.yaml', help='configuration file')
     parser.add_argument('--log', action='store_true', help='turn on the wandb')
     args = parser.parse_args()
 
@@ -97,7 +99,6 @@ if __name__ == '__main__':
 
     # parse configuration file
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    num_epoch = config['num_epoch']
     batchsize = config['batchsize']
     t_dim = config['t_dim']
     dimension = config['dimension']
@@ -111,7 +112,7 @@ if __name__ == '__main__':
                   layers=config['layers'],
                   in_dim=dimension + 1, out_dim=dimension,
                   activation=config['activation']).to(device)
-    ckpt = torch.load(ckpt_path)
+    ckpt = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(ckpt)
     criterion = nn.MSELoss()
     eval(model, test_loader, criterion, device, config)

@@ -206,12 +206,6 @@ class OdeDiffusion(torch.nn.Module):
 
         start_time = time.time()
         print("Start sampling in sample...")
-        if tag is None:
-            tag = 'rnd' + str(random.randint(0, 10000))
-        out_dir = os.path.join(self.args.log_dir, 'bs' + str(bs_id) + '_' + tag)
-
-        if -1 < bs_id < 2:
-            os.makedirs(out_dir, exist_ok=True)
 
         e = torch.FloatTensor(*shape).normal_(0, 1).to(self.device)
         x = e
@@ -241,12 +235,6 @@ class OdeDiffusion(torch.nn.Module):
 
         state_t = [x_i.view(x.shape).detach().clone() for x_i in state_t[0]]
         assert len(state_t) == t_size, len(state_t)
-
-        if -1 < bs_id < 2:
-            x0 = state_t[-1].cpu().numpy()
-            kde(x0[:, 0], x0[:, 1], save_file=f'{out_dir}/samples0.png')
-            xinit = state_t[0].cpu().numpy()
-            kde(xinit[:, 0], xinit[:, 1], save_file=f'{out_dir}/init.png')
 
         minutes, seconds = divmod(time.time() - start_time, 60)
         print("Sampling time: {:0>2}:{:05.2f}".format(int(minutes), seconds))
