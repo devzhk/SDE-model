@@ -31,21 +31,21 @@ os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 batchsize = 100
 # construct dataset
-base_dir = 'exp/seed1234'
+base_dir = 'exp/seed321'
 dataset = myOdeData(f'data/test_data.pt')
 train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=True)
 
 # define operator for solving SDE
-layers = [32, 32, 32]
-modes1 = [12, 12]
-modes2 = [12, 12]
+layers = [64, 64, 64, 64, 64, 64, 64]
+modes1 = [16, 16, 16, 16, 16, 16]
+modes2 = [16, 16, 16, 16, 16, 16]
 fc_dim = 64
 activation = 'gelu'
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print(f'device: {device}')
 
 save_ckpt_dir = f'{base_dir}/ckpts'
-model_fn = f'{save_ckpt_dir}/solver-model_final.pt'
+model_fn = f'{save_ckpt_dir}/solver-model_200.pt'
 model = FNN2d(modes1=modes1, modes2=modes1,
               fc_dim=fc_dim, layers=layers,
               in_dim=3, out_dim=3,
@@ -56,17 +56,20 @@ save_img_dir = f'{base_dir}/evals'
 os.makedirs(save_img_dir, exist_ok=True)
 
 for i, (code, image) in enumerate(train_loader):
-    code = code.to(device)
+    # code = code.to(device)
     image = image.to(dtype=torch.float32, device=device)
+    code = torch.randn_like(image)
     pred = model(code)
-
+    diff = image - pred
+    err = torch.mean(diff * diff).item()
+    print(f'{i} prediction error: {err}')
     if i < 10:  # 10 batches
         # code = code.clamp(-1.0, 1.0)
         # image = image.clamp(-1.0, 1.0)
         # pred = pred.clamp(-1.0, 1.0)
-        save_image((code + 1) * 0.5, f'{save_img_dir}/init_{i}.png', nrow=int(np.sqrt(batchsize)))
-        save_image((image + 1) * 0.5, f'{save_img_dir}/image_{i}.png', nrow=int(np.sqrt(batchsize)))
-        save_image((pred + 1) * 0.5, f'{save_img_dir}/pred_{i}.png', nrow=int(np.sqrt(batchsize)))
+        save_image((code + 1) * 0.5, f'{save_img_dir}/r200-init_{i}.png', nrow=int(np.sqrt(batchsize)))
+        save_image((image + 1) * 0.5, f'{save_img_dir}/r200-image_{i}.png', nrow=int(np.sqrt(batchsize)))
+        save_image((pred + 1) * 0.5, f'{save_img_dir}/r200-pred_{i}.png', nrow=int(np.sqrt(batchsize)))
 
     else:
         break
