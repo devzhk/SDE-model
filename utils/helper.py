@@ -3,6 +3,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
 
+
 def remove_module(ckpt):
     state_dict = OrderedDict()
     for key, value in ckpt.items():
@@ -34,15 +35,15 @@ def kde(data, # 1d array
 
 
 def group_kde(data, labels,
-              save_file=''):
+              save_file=None):
     fig = plt.figure(figsize=(6, 6))
 
     for ys, label in zip(data, labels):
         sns.kdeplot(ys, label=label)
 
     plt.legend()
-    if save_file != "":
+    if save_file is not None:
         plt.savefig(save_file, bbox_inches='tight')
-        plt.close(fig)
+        plt.close()
     else:
         plt.show()

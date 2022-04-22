@@ -5,18 +5,18 @@ num_epoch: 3000
 batchsize: 1000
 lr: 0.002
 t_dim: 65
-t_step: 4
+t_step: 8
 dimension: 2
 epsilon: 0.00001
 milestone: [1000, 2000]
 
 # model , 2, 6 - 4, 8
-layers: [8, 8, 8, 8]
-modes: [8, 8, 8]
+layers: [16, 16, 16, 16]
+modes: [4, 4, 4]
 fc_dim: 8
 activation: 'gelu'
 
 
 # log
-logname: 25gm-v4-s17
-save_step: 100
+logname: 25gm-v4-s9-01
+save_step: 500

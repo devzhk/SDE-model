@@ -18,3 +18,4 @@ activation: 'gelu'
 
 # log
 logname: gm-1d
+save_step: 100

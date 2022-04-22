@@ -2,16 +2,25 @@ import torch
 from torch.utils.data import Dataset
 
 
-class myODE(Dataset):
-    def __init__(self, datapath):
-        super(myODE, self).__init__()
-        raw = torch.load(datapath)
+def get_init(x, ts):
+    '''
+    x: (batchsize, t_dim, 1)
+    ts: (t_dim, )
+    '''
+    t_data = ts.repeat(x.shape[0], 1).unsqueeze(-1)
+    return torch.cat([x, t_data], dim=-1)
 
-        self.images = torch.stack([v for v in raw.values()])
+
+class myOdeData(Dataset):
+    def __init__(self, datapath, t_step):
+        super(myOdeData, self).__init__()
+        raw = torch.load(datapath)
+        data = raw['data'].detach().clone()
+        self.data = data[:, 0::t_step]
 
     def __getitem__(self, idx):
-        return self.images[idx]
+        return self.data[idx]
 
     def __len__(self):
-        return self.images.shape[0]
+        return self.data.shape[0]
 
