@@ -24,7 +24,7 @@ if __name__ == '__main__':
     parser = ArgumentParser('basic parser for evaluating FID score')
     parser.add_argument('--dataname', type=str, default='cifar10')
     parser.add_argument('--datasplit', type=str, default='train')
-    parser.add_argument('--ckpt', type=str, default='exp/seed321/ckpts/solver-model_final.pt')
+    parser.add_argument('--ckpt', type=str, default='exp/cifar10-seed32123/ckpts/solver-model_final.pt')
     parser.add_argument('--logdir', type=str, default='log/default')
     parser.add_argument('--img_size', type=int, default=32)
     parser.add_argument('--z_dim', type=int, default=3072)

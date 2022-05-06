@@ -10,8 +10,11 @@ from torchvision.utils import save_image
 
 from tqdm import tqdm
 
-from models.fno import FNN1d
-from models.timeConv import TimeConv
+from models.fno import FNN3d
+
+
+def get_init(x, t):
+    pass
 
 
 class myODE(Dataset):
@@ -20,7 +23,6 @@ class myODE(Dataset):
         raw = torch.load(datapath)
 
         images = torch.stack([v for v in raw.values()])
-        images = images.reshape(images.shape[0], images.shape[1], -1)
         self.images = images.permute(1, 0, 2)
         # batchsize x T x 3072
 
@@ -32,10 +34,11 @@ class myODE(Dataset):
 
 
 def run(configs=None):
-    dim = 3 * 32 * 32
+    dim = 64
     batchsize = 16
     num_epoch = 2000
-    base_dir = 'exp/seed1234/'
+    datapath = 'data/ode_data_sd1.pt'
+    base_dir = 'exp/cifar10-fno3d-seed001/'
     save_img_dir = f'{base_dir}/figs'
     os.makedirs(save_img_dir, exist_ok=True)
 
@@ -43,22 +46,23 @@ def run(configs=None):
     os.makedirs(save_ckpt_dir, exist_ok=True)
 
     # construct dataset
-    dataset = myODE('data/ode_data_sd1.pt')
+    dataset = myODE(datapath)
 
     train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=True, drop_last=True)
 
     # define operator for solving SDE
-    layers = [dim, dim, dim]
-    modes1 = [8, 8, 8]
+    layers = [dim, dim, dim, dim]
+    modes1 = [16, 16, 16]
+    modes2 = [16, 16, 16]
+    modes3 = [16, 16, 16]
     fc_dim = dim
     activation = 'gelu'
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    model = TimeConv(modes=modes1,
-                     fc_dim=fc_dim,
-                     layers=layers,
-                     activation=activation,
-                     in_dim=dim, out_dim=dim).to(device)
+    model = FNN3d(modes1=modes1, modes2=modes2, modes3=modes3,
+                  fc_dim=fc_dim, layers=layers,
+                  in_dim=4, out_dim=3,
+                  activation=activation)
     # define optimizer and criterion
     optimizer = Adam(model.parameters(), lr=5e-4)
     scheduler = MultiStepLR(optimizer, milestones=[500, 800, 1200, 1600], gamma=0.5)

@@ -1,5 +1,6 @@
 # data configuration
 datapath: data/25gm/25gm-train-v4-s65.pt
+num_sample: 5000
 # training
 num_epoch: 3000
 batchsize: 1000
@@ -18,5 +19,5 @@ activation: 'gelu'
 
 
 # log
-logname: 25gm-v4-s65-01
-save_step: 100
+logname: 25gm-v4-s65-sample5k
+save_step: 500

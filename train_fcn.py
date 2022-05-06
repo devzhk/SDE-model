@@ -13,11 +13,26 @@ from utils.optim import Adam
 
 from tqdm import tqdm
 
-from models.fno import FNN1d
+from models.fcn import FCN
 
 from utils.helper import kde, group_kde
-from utils.dataset import myOdeData, get_init
 
+
+class myOdeData(Dataset):
+    def __init__(self, datapath, t_step, num_sample=None):
+        super(myOdeData, self).__init__()
+        raw = torch.load(datapath)
+        data = raw['data'].detach().clone()
+        if num_sample is None:
+            self.data = data[:, 0::t_step]
+        else:
+            self.data = data[:num_sample, 0::t_step]
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+    def __len__(self):
+        return self.data.shape[0]
 
 
 def train(model, dataloader,
@@ -37,19 +52,17 @@ def train(model, dataloader,
     save_ckpt_dir = f'{base_dir}/ckpts'
     os.makedirs(save_ckpt_dir, exist_ok=True)
 
-    t0, t1 = 1., config['epsilon']
-    ts = torch.linspace(t0, t1, num_t)
+
     model.train()
     pbar = tqdm(list(range(config['num_epoch'])), dynamic_ncols=True)
     for e in pbar:
         train_loss = 0
         for states in dataloader:
-            ini_state = states[:, 0:1, :].repeat(1, num_t, 1)
-            in_state = get_init(ini_state, ts).to(device)
             states = states.to(device)
-
+            in_state = states[:, 0]
+            out_state = states[:, -1]
             pred = model(in_state)
-            loss = criterion(pred, states)
+            loss = criterion(pred, out_state)
             # update model
             model.zero_grad()
             loss.backward()
@@ -65,30 +78,30 @@ def train(model, dataloader,
 
         if e % save_step == 0:
             if dimension == 1:
-                zip_state = [pred[:, -1, 0].detach().numpy(), states[:, -1, 0].detach().numpy()]
+                zip_state = [pred.detach().numpy(), out_state.detach().numpy()]
                 labels = ['Prediction', 'Truth']
                 group_kde(zip_state, labels, f'{save_img_dir}/train_{e}.png')
             elif dimension == 2:
-                kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_{e}_pred.png', dim=2)
-                kde(states[:, -1, :], save_file=f'{save_img_dir}/train_{e}_truth.png', dim=2)
+                kde(pred, save_file=f'{save_img_dir}/train_{e}_pred.png', dim=2)
+                kde(out_state, save_file=f'{save_img_dir}/train_{e}_truth.png', dim=2)
             # kde(pred[:, -1, 0].detach().numpy(), f'figs/1dGM/pred_{e}.png')
             # kde(states[:, -1, 0].detach().numpy(), f'figs/1dGM/true_{e}.png')
             torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_{e}.pt')
 
     if dimension == 1:
-        zip_state = [pred[:, -1, 0].detach().numpy(), states[:, -1, 0].detach().numpy()]
+        zip_state = [pred[:, -1, 0].detach().numpy(), out_state[:, -1, 0].detach().numpy()]
         labels = ['Prediction', 'Truth']
         group_kde(zip_state, labels, f'{save_img_dir}/train_final.png')
     elif dimension == 2:
-        kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_final_pred.png', dim=2)
-        kde(states[:, -1, :], save_file=f'{save_img_dir}/train_final_truth.png', dim=2)
+        kde(pred, save_file=f'{save_img_dir}/train_final_pred.png', dim=2)
+        kde(out_state, save_file=f'{save_img_dir}/train_final_truth.png', dim=2)
 
     torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_final.pt')
 
 
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
-    parser.add_argument('--config', type=str, default='configs/gaussian/train_2d-s65.yaml', help='configuration file')
+    parser.add_argument('--config', type=str, default='configs/gaussian/train_2d-fcn.yaml', help='configuration file')
     parser.add_argument('--log', action='store_true', help='turn on the wandb')
     args = parser.parse_args()
 
@@ -105,12 +118,7 @@ if __name__ == '__main__':
     num_sample = config['num_sample'] if 'num_sample' in config else None
     dataset = myOdeData(config['datapath'], config['t_step'], num_sample)
     train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=False)
-    model = FNN1d(modes=config['modes'],
-                  fc_dim=config['fc_dim'],
-                  layers=config['layers'],
-                  in_dim=dimension + 1, out_dim=dimension,
-                  activation=config['activation']).to(device)
-
+    model = FCN(layers=config['layers'], activation=config['activation']).to(device)
     # define optimizer and criterion
     optimizer = Adam(model.parameters(), lr=config['lr'])
     scheduler = MultiStepLR(optimizer,

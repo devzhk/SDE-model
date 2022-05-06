@@ -1,109 +1,364 @@
-# @title Define the ODE sampler (double click to expand or collapse)
+# coding=utf-8
+# Copyright 2020 The Google Research Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# pylint: skip-file
+# pytype: skip-file
+"""Various sampling methods."""
+import functools
+
 import torch
-from scipy import integrate
-from tqdm import tqdm
 import numpy as np
-## The error tolerance for the black-box ODE solver
-error_tolerance = 1e-5  # @param {'type': 'number'}
+import abc
+
+from .helper import from_flattened_numpy, to_flattened_numpy, get_score_fn
+from scipy import integrate
+import sde_lib
 
 
-def ode_sampler(score_model,
-                marginal_prob_std,
-                diffusion_coeff,
-                batch_size=64,
-                atol=error_tolerance,
-                rtol=error_tolerance,
-                device='cuda',
-                z=None,
-                eps=1e-3):
-    """Generate samples from score-based models with black-box ODE solvers.
+_CORRECTORS = {}
+_PREDICTORS = {}
 
-    Args:
-      score_model: A PyTorch model that represents the time-dependent score-based model.
-      marginal_prob_std: A function that returns the standard deviation
-        of the perturbation kernel.
-      diffusion_coeff: A function that returns the diffusion coefficient of the SDE.
-      batch_size: The number of samplers to generate by calling this function once.
-      atol: Tolerance of absolute errors.
-      rtol: Tolerance of relative errors.
-      device: 'cuda' for running on GPUs, and 'cpu' for running on CPUs.
-      z: The latent code that governs the final sample. If None, we start from p_1;
-        otherwise, we start from the given z.
-      eps: The smallest time step for numerical stability.
-    """
-    t = torch.ones(batch_size, device=device)
-    # Create the latent code
-    if z is None:
-        init_x = torch.randn(batch_size, 1, 28, 28, device=device) \
-                 * marginal_prob_std(t)[:, None, None, None]
+
+def register_predictor(cls=None, *, name=None):
+  """A decorator for registering predictor classes."""
+
+  def _register(cls):
+    if name is None:
+      local_name = cls.__name__
     else:
-        init_x = z
+      local_name = name
+    if local_name in _PREDICTORS:
+      raise ValueError(f'Already registered model with name: {local_name}')
+    _PREDICTORS[local_name] = cls
+    return cls
 
-    shape = init_x.shape
-
-    def score_eval_wrapper(sample, time_steps):
-        """A wrapper of the score-based model for use by the ODE solver."""
-        sample = torch.tensor(sample, device=device, dtype=torch.float32).reshape(shape)
-        time_steps = torch.tensor(time_steps, device=device, dtype=torch.float32).reshape((sample.shape[0],))
-        with torch.no_grad():
-            score = score_model(sample, time_steps)
-        return score.cpu().numpy().reshape((-1,)).astype(np.float64)
-
-    def ode_func(t, x):
-        """The ODE function for use by the ODE solver."""
-        time_steps = np.ones((shape[0],)) * t
-        g = diffusion_coeff(torch.tensor(t)).cpu().numpy()
-        return -0.5 * (g ** 2) * score_eval_wrapper(x, time_steps)
-
-    # Run the black-box ODE solver.
-    res = integrate.solve_ivp(ode_func, (1., eps), init_x.reshape(-1).cpu().numpy(), rtol=rtol, atol=atol,
-                              method='RK45')
-    print(f"Number of function evaluations: {res.nfev}")
-    x = torch.tensor(res.y[:, -1], device=device).reshape(shape)
-
-    return init_x, x
+  if cls is None:
+    return _register
+  else:
+    return _register(cls)
 
 
-# @title Define the Euler-Maruyama sampler (double click to expand or collapse)
+def register_corrector(cls=None, *, name=None):
+  """A decorator for registering corrector classes."""
 
-## The number of sampling steps.
-num_steps = 500  # @param {'type':'integer'}
+  def _register(cls):
+    if name is None:
+      local_name = cls.__name__
+    else:
+      local_name = name
+    if local_name in _CORRECTORS:
+      raise ValueError(f'Already registered model with name: {local_name}')
+    _CORRECTORS[local_name] = cls
+    return cls
+
+  if cls is None:
+    return _register
+  else:
+    return _register(cls)
 
 
-def Euler_Maruyama_sampler(score_model,
-                           marginal_prob_std,
-                           diffusion_coeff,
-                           batch_size=64,
-                           num_steps=num_steps,
-                           device='cuda',
-                           eps=1e-3):
-    """Generate samples from score-based models with the Euler-Maruyama solver.
+def get_predictor(name):
+  return _PREDICTORS[name]
 
+
+def get_corrector(name):
+  return _CORRECTORS[name]
+
+
+def get_sampling_fn(config, sde, shape, inverse_scaler, eps):
+  """Create a sampling function.
+  Args:
+    config: A `ml_collections.ConfigDict` object that contains all configuration information.
+    sde: A `sde_lib.SDE` object that represents the forward SDE.
+    shape: A sequence of integers representing the expected shape of a single sample.
+    inverse_scaler: The inverse data normalizer function.
+    eps: A `float` number. The reverse-time SDE is only integrated to `eps` for numerical stability.
+  Returns:
+    A function that takes random states and a replicated training state and outputs samples with the
+      trailing dimensions matching `shape`.
+  """
+
+  sampler_name = config.sampling.method
+  # Probability flow ODE sampling with black-box ODE solvers
+  if sampler_name.lower() == 'ode':
+    sampling_fn = get_ode_sampler(sde=sde,
+                                  shape=shape,
+                                  inverse_scaler=inverse_scaler,
+                                  denoise=config.sampling.noise_removal,
+                                  eps=eps,
+                                  device=config.device)
+  return sampling_fn
+
+
+class Predictor(abc.ABC):
+  """The abstract class for a predictor algorithm."""
+
+  def __init__(self, sde, score_fn, probability_flow=False):
+    super().__init__()
+    self.sde = sde
+    # Compute the reverse SDE/ODE
+    self.rsde = sde.reverse(score_fn, probability_flow)
+    self.score_fn = score_fn
+
+  @abc.abstractmethod
+  def update_fn(self, x, t):
+    """One update of the predictor.
     Args:
-      score_model: A PyTorch model that represents the time-dependent score-based model.
-      marginal_prob_std: A function that gives the standard deviation of
-        the perturbation kernel.
-      diffusion_coeff: A function that gives the diffusion coefficient of the SDE.
-      batch_size: The number of samplers to generate by calling this function once.
-      num_steps: The number of sampling steps.
-        Equivalent to the number of discretized time steps.
-      device: 'cuda' for running on GPUs, and 'cpu' for running on CPUs.
-      eps: The smallest time step for numerical stability.
-
+      x: A PyTorch tensor representing the current state
+      t: A Pytorch tensor representing the current time step.
     Returns:
-      Samples.
+      x: A PyTorch tensor of the next state.
+      x_mean: A PyTorch tensor. The next state without random noise. Useful for denoising.
     """
-    t = torch.ones(batch_size, device=device)
-    init_x = torch.randn(batch_size, 1, 28, 28, device=device) \
-             * marginal_prob_std(t)[:, None, None, None]
-    time_steps = torch.linspace(1., eps, num_steps, device=device)
-    step_size = time_steps[0] - time_steps[1]
-    x = init_x
+    pass
+
+
+class Corrector(abc.ABC):
+  """The abstract class for a corrector algorithm."""
+
+  def __init__(self, sde, score_fn, snr, n_steps):
+    super().__init__()
+    self.sde = sde
+    self.score_fn = score_fn
+    self.snr = snr
+    self.n_steps = n_steps
+
+  @abc.abstractmethod
+  def update_fn(self, x, t):
+    """One update of the corrector.
+    Args:
+      x: A PyTorch tensor representing the current state
+      t: A PyTorch tensor representing the current time step.
+    Returns:
+      x: A PyTorch tensor of the next state.
+      x_mean: A PyTorch tensor. The next state without random noise. Useful for denoising.
+    """
+    pass
+
+
+@register_predictor(name='euler_maruyama')
+class EulerMaruyamaPredictor(Predictor):
+  def __init__(self, sde, score_fn, probability_flow=False):
+    super().__init__(sde, score_fn, probability_flow)
+
+  def update_fn(self, x, t):
+    dt = -1. / self.rsde.N
+    z = torch.randn_like(x)
+    drift, diffusion = self.rsde.sde(x, t)
+    x_mean = x + drift * dt
+    x = x_mean + diffusion[:, None, None, None] * np.sqrt(-dt) * z
+    return x, x_mean
+
+
+@register_predictor(name='reverse_diffusion')
+class ReverseDiffusionPredictor(Predictor):
+  def __init__(self, sde, score_fn, probability_flow=False):
+    super().__init__(sde, score_fn, probability_flow)
+
+  def update_fn(self, x, t):
+    f, G = self.rsde.discretize(x, t)
+    z = torch.randn_like(x)
+    x_mean = x - f
+    x = x_mean + G[:, None, None, None] * z
+    return x, x_mean
+
+
+@register_predictor(name='ancestral_sampling')
+class AncestralSamplingPredictor(Predictor):
+  """The ancestral sampling predictor. Currently only supports VE/VP SDEs."""
+
+  def __init__(self, sde, score_fn, probability_flow=False):
+    super().__init__(sde, score_fn, probability_flow)
+    if not isinstance(sde, sde_lib.VPSDE) and not isinstance(sde, sde_lib.VESDE):
+      raise NotImplementedError(f"SDE class {sde.__class__.__name__} not yet supported.")
+    assert not probability_flow, "Probability flow not supported by ancestral sampling"
+
+  def vesde_update_fn(self, x, t):
+    sde = self.sde
+    timestep = (t * (sde.N - 1) / sde.T).long()
+    sigma = sde.discrete_sigmas[timestep]
+    adjacent_sigma = torch.where(timestep == 0, torch.zeros_like(t), sde.discrete_sigmas.to(t.device)[timestep - 1])
+    score = self.score_fn(x, t)
+    x_mean = x + score * (sigma ** 2 - adjacent_sigma ** 2)[:, None, None, None]
+    std = torch.sqrt((adjacent_sigma ** 2 * (sigma ** 2 - adjacent_sigma ** 2)) / (sigma ** 2))
+    noise = torch.randn_like(x)
+    x = x_mean + std[:, None, None, None] * noise
+    return x, x_mean
+
+  def vpsde_update_fn(self, x, t):
+    sde = self.sde
+    timestep = (t * (sde.N - 1) / sde.T).long()
+    beta = sde.discrete_betas.to(t.device)[timestep]
+    score = self.score_fn(x, t)
+    x_mean = (x + beta[:, None, None, None] * score) / torch.sqrt(1. - beta)[:, None, None, None]
+    noise = torch.randn_like(x)
+    x = x_mean + torch.sqrt(beta)[:, None, None, None] * noise
+    return x, x_mean
+
+  def update_fn(self, x, t):
+    if isinstance(self.sde, sde_lib.VESDE):
+      return self.vesde_update_fn(x, t)
+    elif isinstance(self.sde, sde_lib.VPSDE):
+      return self.vpsde_update_fn(x, t)
+
+
+@register_predictor(name='none')
+class NonePredictor(Predictor):
+  """An empty predictor that does nothing."""
+
+  def __init__(self, sde, score_fn, probability_flow=False):
+    pass
+
+  def update_fn(self, x, t):
+    return x, x
+
+
+@register_corrector(name='langevin')
+class LangevinCorrector(Corrector):
+  def __init__(self, sde, score_fn, snr, n_steps):
+    super().__init__(sde, score_fn, snr, n_steps)
+    if not isinstance(sde, sde_lib.VPSDE) \
+        and not isinstance(sde, sde_lib.VESDE) \
+        and not isinstance(sde, sde_lib.subVPSDE):
+      raise NotImplementedError(f"SDE class {sde.__class__.__name__} not yet supported.")
+
+  def update_fn(self, x, t):
+    sde = self.sde
+    score_fn = self.score_fn
+    n_steps = self.n_steps
+    target_snr = self.snr
+    if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
+      timestep = (t * (sde.N - 1) / sde.T).long()
+      alpha = sde.alphas.to(t.device)[timestep]
+    else:
+      alpha = torch.ones_like(t)
+
+    for i in range(n_steps):
+      grad = score_fn(x, t)
+      noise = torch.randn_like(x)
+      grad_norm = torch.norm(grad.reshape(grad.shape[0], -1), dim=-1).mean()
+      noise_norm = torch.norm(noise.reshape(noise.shape[0], -1), dim=-1).mean()
+      step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
+      x_mean = x + step_size[:, None, None, None] * grad
+      x = x_mean + torch.sqrt(step_size * 2)[:, None, None, None] * noise
+
+    return x, x_mean
+
+
+@register_corrector(name='ald')
+class AnnealedLangevinDynamics(Corrector):
+  """The original annealed Langevin dynamics predictor in NCSN/NCSNv2.
+  We include this corrector only for completeness. It was not directly used in our paper.
+  """
+
+  def __init__(self, sde, score_fn, snr, n_steps):
+    super().__init__(sde, score_fn, snr, n_steps)
+    if not isinstance(sde, sde_lib.VPSDE) \
+        and not isinstance(sde, sde_lib.VESDE) \
+        and not isinstance(sde, sde_lib.subVPSDE):
+      raise NotImplementedError(f"SDE class {sde.__class__.__name__} not yet supported.")
+
+  def update_fn(self, x, t):
+    sde = self.sde
+    score_fn = self.score_fn
+    n_steps = self.n_steps
+    target_snr = self.snr
+    if isinstance(sde, sde_lib.VPSDE) or isinstance(sde, sde_lib.subVPSDE):
+      timestep = (t * (sde.N - 1) / sde.T).long()
+      alpha = sde.alphas.to(t.device)[timestep]
+    else:
+      alpha = torch.ones_like(t)
+
+    std = self.sde.marginal_prob(x, t)[1]
+
+    for i in range(n_steps):
+      grad = score_fn(x, t)
+      noise = torch.randn_like(x)
+      step_size = (target_snr * std) ** 2 * 2 * alpha
+      x_mean = x + step_size[:, None, None, None] * grad
+      x = x_mean + noise * torch.sqrt(step_size * 2)[:, None, None, None]
+
+    return x, x_mean
+
+
+def get_ode_sampler(sde, shape, inverse_scaler,
+                    denoise=False, rtol=1e-5, atol=1e-5,
+                    method='RK45', eps=1e-3, device='cuda'):
+  """Probability flow ODE sampler with the black-box ODE solver.
+  Args:
+    sde: An `sde_lib.SDE` object that represents the forward SDE.
+    shape: A sequence of integers. The expected shape of a single sample.
+    inverse_scaler: The inverse data normalizer.
+    denoise: If `True`, add one-step denoising to final samples.
+    rtol: A `float` number. The relative tolerance level of the ODE solver.
+    atol: A `float` number. The absolute tolerance level of the ODE solver.
+    method: A `str`. The algorithm used for the black-box ODE solver.
+      See the documentation of `scipy.integrate.solve_ivp`.
+    eps: A `float` number. The reverse-time SDE/ODE will be integrated to `eps` for numerical stability.
+    device: PyTorch device.
+  Returns:
+    A sampling function that returns samples and the number of function evaluations during sampling.
+  """
+
+  def denoise_update_fn(model, x):
+    score_fn = get_score_fn(sde, model, train=False, continuous=True)
+    # Reverse diffusion predictor for denoising
+    predictor_obj = ReverseDiffusionPredictor(sde, score_fn, probability_flow=False)
+    vec_eps = torch.ones(x.shape[0], device=x.device) * eps
+    _, x = predictor_obj.update_fn(x, vec_eps)
+    return x
+
+  def drift_fn(model, x, t):
+    """Get the drift function of the reverse-time SDE."""
+    score_fn = get_score_fn(sde, model, train=False, continuous=True)
+    rsde = sde.reverse(score_fn, probability_flow=True)
+    return rsde.sde(x, t)[0]
+
+  def ode_sampler(model, z=None):
+    """The probability flow ODE sampler with black-box ODE solver.
+    Args:
+      model: A score model.
+      z: If present, generate samples from latent code `z`.
+    Returns:
+      samples, number of function evaluations.
+    """
     with torch.no_grad():
-        for time_step in tqdm(time_steps):
-            batch_time_step = torch.ones(batch_size, device=device) * time_step
-            g = diffusion_coeff(batch_time_step)
-            mean_x = x + (g ** 2)[:, None, None, None] * score_model(x, batch_time_step) * step_size
-            x = mean_x + torch.sqrt(step_size) * g[:, None, None, None] * torch.randn_like(x)
-            # Do not include any noise in the last sampling step.
-    return init_x, mean_x
+      # Initial sample
+      if z is None:
+        # If not represent, sample the latent code from the prior distibution of the SDE.
+        x = sde.prior_sampling(shape).to(device)
+      else:
+        x = z
+
+      def ode_func(t, x):
+        x = from_flattened_numpy(x, shape).to(device).type(torch.float32)
+        vec_t = torch.ones(shape[0], device=x.device) * t
+        drift = drift_fn(model, x, vec_t)
+        return to_flattened_numpy(drift)
+
+      # Black-box ODE solver for the probability flow ODE
+      solution = integrate.solve_ivp(ode_func, (sde.T, eps), to_flattened_numpy(x),
+                                     rtol=rtol, atol=atol, method=method)
+      nfe = solution.nfev
+      x = torch.tensor(solution.y[:, -1]).reshape(shape).to(device).type(torch.float32)
+
+      # Denoising is equivalent to running one predictor step without adding noise
+      if denoise:
+        x = denoise_update_fn(model, x)
+
+      x = inverse_scaler(x)
+      return x, nfe
+
+  return ode_sampler

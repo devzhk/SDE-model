@@ -12,11 +12,14 @@ def get_init(x, ts):
 
 
 class myOdeData(Dataset):
-    def __init__(self, datapath, t_step):
+    def __init__(self, datapath, t_step, num_sample=None):
         super(myOdeData, self).__init__()
         raw = torch.load(datapath)
         data = raw['data'].detach().clone()
-        self.data = data[:, 0::t_step]
+        if num_sample is None:
+            self.data = data[:, 0::t_step]
+        else:
+            self.data = data[:num_sample, 0::t_step]
 
     def __getitem__(self, idx):
         return self.data[idx]

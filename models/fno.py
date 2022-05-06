@@ -157,7 +157,8 @@ class FNN2d(nn.Module):
 class FNN3d(nn.Module):
     def __init__(self, modes1, modes2, modes3,
                  width=16, fc_dim=128,
-                 layers=None, in_dim=4, out_dim=1):
+                 layers=None, in_dim=4, out_dim=1,
+                 activation='gelu'):
         '''
         Args:
             modes1: list of int, first dimension maximal modes for each layer
@@ -189,12 +190,21 @@ class FNN3d(nn.Module):
         self.fc1 = nn.Linear(layers[-1], fc_dim)
         self.fc2 = nn.Linear(fc_dim, out_dim)
 
+        if activation == 'tanh':
+            self.activation = F.tanh
+        elif activation == 'gelu':
+            self.activation = F.gelu
+        elif activation == 'relu':
+            self.activation == F.relu
+        else:
+            raise ValueError(f'{activation} is not supported')
+
     def forward(self, x):
         '''
         Args:
-            x: (batchsize, x_grid, y_grid, t_grid, 3)
+            x: (batchsize, x_grid, y_grid, z_grid, 4)
         Returns:
-            u: (batchsize, x_grid, y_grid, t_grid, 1)
+            u: (batchsize, x_grid, y_grid, z_grid, 3)
         '''
         length = len(self.ws)
         batchsize = x.shape[0]
@@ -208,9 +218,9 @@ class FNN3d(nn.Module):
             x2 = w(x.view(batchsize, self.layers[i], -1)).view(batchsize, self.layers[i+1], size_x, size_y, size_z)
             x = x1 + x2
             if i != length - 1:
-                x = torch.tanh(x)
+                x = self.activation(x)
         x = x.permute(0, 2, 3, 4, 1)
         x = self.fc1(x)
-        x = torch.tanh(x)
+        x = self.activation(x)
         x = self.fc2(x)
         return x

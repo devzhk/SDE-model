@@ -11,7 +11,7 @@ from torchvision.utils import save_image
 
 from tqdm import tqdm
 
-from models.fno import FNN1d
+from models.fcn import FCN
 
 from utils.helper import kde, group_kde, count_params
 from utils.dataset import get_init, myOdeData
@@ -39,23 +39,23 @@ def eval(model, dataloader, criterion,
     with torch.no_grad():
         test_err = 0
         for states in tqdm(dataloader):
-            ini_state = states[:, 0:1, :].repeat(1, num_t, 1)
-            in_state = get_init(ini_state, ts).to(device)
             states = states.to(device)
+            in_state = states[:, 0]
+            out_state = states[:, -1]
             pred = model(in_state)
 
             pred_list.append(pred)
-            truth_list.append(states)
-            loss = criterion(pred, states)
+            truth_list.append(out_state)
+            loss = criterion(pred, out_state)
 
             test_err += loss.item()
     
     test_err /= len(dataloader)
-    print(f'Test MSE of the whole trajectory: {test_err}')
+    print(f'Test MSE: {test_err}')
     final_pred = torch.cat(pred_list, dim=0)
     final_states = torch.cat(truth_list, dim=0)
 
-    err_T = criterion(final_pred[:, -1, :], final_states[:, -1, :])
+    err_T = criterion(final_pred, final_states)
     print(f'Test MSE at time 0: {err_T}')
 
     if dimension == 1:
@@ -63,13 +63,13 @@ def eval(model, dataloader, criterion,
         labels = ['Prediction', 'Truth']
         group_kde(zip_state, labels, f'{save_img_dir}/test.png')
     elif dimension == 2:
-        kde(final_pred[:, -1, :], save_file=f'{save_img_dir}/test_pred.png', dim=2)
-        kde(final_states[:, -1, :], save_file=f'{save_img_dir}/test_truth.png', dim=2)
+        kde(final_pred, save_file=f'{save_img_dir}/test_pred.png', dim=2)
+        kde(final_states, save_file=f'{save_img_dir}/test_truth.png', dim=2)
 
 
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
-    parser.add_argument('--config', type=str, default='configs/gaussian/test_2d.yaml', help='configuration file')
+    parser.add_argument('--config', type=str, default='configs/gaussian/test_2d-fcn.yaml', help='configuration file')
     parser.add_argument('--log', action='store_true', help='turn on the wandb')
     args = parser.parse_args()
 
@@ -85,11 +85,8 @@ if __name__ == '__main__':
     # 
     dataset = myOdeData(config['datapath'], config['t_step'])
     test_loader = DataLoader(dataset, batch_size=batchsize, shuffle=False)
-    model = FNN1d(modes=config['modes'],
-                  fc_dim=config['fc_dim'],
-                  layers=config['layers'],
-                  in_dim=dimension + 1, out_dim=dimension,
-                  activation=config['activation']).to(device)
+    model = FCN(layers=config['layers'],
+                activation=config['activation']).to(device)
     print(f'Number of parameters: {count_params(model)}')
     ckpt = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(ckpt)

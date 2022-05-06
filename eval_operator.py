@@ -31,7 +31,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 batchsize = 100
 # construct dataset
-base_dir = 'exp/seed321'
+base_dir = 'exp/cifar10-seed32123'
 dataset = myOdeData(f'data/test_data.pt')
 train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=True)
 
@@ -45,7 +45,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print(f'device: {device}')
 
 save_ckpt_dir = f'{base_dir}/ckpts'
-model_fn = f'{save_ckpt_dir}/solver-model_200.pt'
+model_fn = f'{save_ckpt_dir}/solver-model_final.pt'
 model = FNN2d(modes1=modes1, modes2=modes1,
               fc_dim=fc_dim, layers=layers,
               in_dim=3, out_dim=3,

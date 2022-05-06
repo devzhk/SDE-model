@@ -1,24 +1,21 @@
 # data configuration
 datapath: data/25gm/25gm-train-v4-s65.pt
-num_sample: 5000
 
 # training
-num_epoch: 4000
+num_epoch: 2000
 batchsize: 1000
-lr: 0.002
+lr: 0.0002
 t_dim: 65
 t_step: 16
 dimension: 2
 epsilon: 0.00001
-milestone: [2500]
+milestone: [1000]
 
 # model , 2, 6 - 4, 8
-layers: [16, 16, 16, 16]
-modes: [2, 2, 2]
-fc_dim: 8
+layers: [2, 128, 128, 128, 128, 128, 2]
 activation: 'gelu'
 
 
 # log
-logname: 25gm-v4-s5-sample5k
+logname: 25gm-v4-FCN-128
 save_step: 500

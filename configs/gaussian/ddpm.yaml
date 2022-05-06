@@ -1,0 +1,22 @@
+datapath: data/25gm/25gm-train-v4-s65.pt
+
+# model
+temb_dim: 1
+x_dim: 2
+
+# SDE
+beta_min: 0.1
+beta_max: 20
+num_scales: 1000
+
+# training
+num_epoch: 1500
+batchsize: 1000
+lr: 0.001
+milestone: [1000]
+
+# log config
+logname: ddpm-01
+save_step: 500
+
+
