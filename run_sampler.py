@@ -7,9 +7,10 @@ from argparse import ArgumentParser
 
 import torch
 
-from models.ddpm import DDPM
+from models.ddpm import DDPM, Generator
+
 from utils.ddpm_sampler import VPODE, OdeDiffusion
-from utils.helper import kde
+from utils.helper import kde, scatter
 
 
 
@@ -38,6 +39,7 @@ if __name__ == '__main__':
     beta_max = config['beta_max']
     batchsize = config['batchsize']
     num_batch = config['num_samples'] // batchsize
+    scale_sigma = config['scale'] if 'scale' in config else False
     # add device
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -50,11 +52,13 @@ if __name__ == '__main__':
 
     torch.backends.cudnn.benchmark = True
 
-    model = DDPM(config)
-    ckpt = torch.load(ckpt_path, map_location=device)
+    # model = DDPM(config).to(device)
+    model = Generator().to(device)
+    ckpt = torch.load('exp/ref_ddpm_25gm.pt', map_location=device)
+    # ckpt = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(ckpt)
-
-    vpode = VPODE(model, beta_min, beta_max)
+    print(scale_sigma)
+    vpode = VPODE(model, beta_min, beta_max, scale_sigma=scale_sigma)
     ode_diff = OdeDiffusion(config, vpode, img_shape=[2], device=device)
 
     images_list = []
@@ -66,8 +70,8 @@ if __name__ == '__main__':
     xT_fig_name = os.path.join(sample_dir, f'xT_{dataname}_{seed}.png')
     x0_fig_name = os.path.join(sample_dir, f'x0_{dataname}_{seed}.png')
     kde(data[:, 0, :], xT_fig_name, dim=2)
-    kde(data[:, -1, :], x0_fig_name, dim=2)
-
+    # kde(data[:, -1, :], x0_fig_name, dim=2)
+    scatter(data[:, -1, :].detach().cpu().numpy(), x0_fig_name)
     torch.save(
         {
             'data': data,

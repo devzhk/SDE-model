@@ -22,7 +22,7 @@ class FCN(nn.Module):
                                      for in_size, out_size in zip(layers, layers[1:])])
 
     def forward(self, x):
-        length = len(self.layer_config)
+        length = len(self.layers)
         for i, linear in enumerate(self.layers):
             x = linear(x)
             if i != length - 1:

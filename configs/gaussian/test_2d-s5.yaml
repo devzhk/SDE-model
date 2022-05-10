@@ -6,13 +6,13 @@ t_dim: 65
 t_step: 16
 dimension: 2
 epsilon: 0.00001
-ckpt: exp/25gm-v4-s5-sample5k/ckpts/solver-model_final.pt
+ckpt: exp/25gm-v4-s5-16-m3-5k/ckpts/solver-model_final.pt
 
 # model , 2, 6 - 4, 8
 layers: [16, 16, 16, 16]
-modes: [2, 2, 2]
+modes: [3, 3, 3]
 fc_dim: 8
 activation: 'gelu'
 
 # log
-logname: 25gm-v4-s5-sample5k
+logname: 25gm-v4-s5-16-m3-5k

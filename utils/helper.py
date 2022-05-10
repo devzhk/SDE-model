@@ -45,6 +45,17 @@ def kde(data, # 1d array
         plt.show()
 
 
+def scatter(data, save_file=None):
+    plt.style.use('seaborn-darkgrid')
+    fig = plt.figure(figsize=(6,6))
+    plt.scatter(data[:, 0], data[:, 1], s=0.5)
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.savefig(save_file, bbox_inches='tight')
+    plt.cla()
+    plt.close(fig)
+
+
 def group_kde(data, labels,
               save_file=None):
     fig = plt.figure(figsize=(6, 6))

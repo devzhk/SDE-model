@@ -69,7 +69,7 @@ def eval(model, dataloader, criterion,
 
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
-    parser.add_argument('--config', type=str, default='configs/gaussian/test_2d.yaml', help='configuration file')
+    parser.add_argument('--config', type=str, default='configs/gaussian/test_2d-s3.yaml', help='configuration file')
     parser.add_argument('--log', action='store_true', help='turn on the wandb')
     args = parser.parse_args()
 

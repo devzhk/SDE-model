@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from models.fcn import FCN
 
-from utils.helper import kde, group_kde
+from utils.helper import kde, group_kde, count_params
 
 
 class myOdeData(Dataset):
@@ -117,8 +117,9 @@ if __name__ == '__main__':
     #
     num_sample = config['num_sample'] if 'num_sample' in config else None
     dataset = myOdeData(config['datapath'], config['t_step'], num_sample)
-    train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=False)
+    train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=True)
     model = FCN(layers=config['layers'], activation=config['activation']).to(device)
+    print(f'Number of parameters: {count_params(model)}')
     # define optimizer and criterion
     optimizer = Adam(model.parameters(), lr=config['lr'])
     scheduler = MultiStepLR(optimizer,

@@ -1,11 +1,12 @@
 import time
+import math
 import torch
 
 from torchdiffeq import odeint_adjoint
 
 
 class VPODE(torch.nn.Module):
-    def __init__(self, model, beta_min, beta_max):
+    def __init__(self, model, beta_min, beta_max, scale_sigma=False):
         """Construct a Variance Preserving SDE.
         Args:
           model: diffusion model
@@ -16,6 +17,8 @@ class VPODE(torch.nn.Module):
         self.model = model
         self.beta_0 = beta_min
         self.beta_1 = beta_max
+        self.alphas_t = lambda t: torch.exp(-0.5 * (beta_max - beta_min) * t ** 2 - beta_min * t)
+        self.scale_sigma = scale_sigma
 
     def vpsde_fn(self, t, x):
         beta_t = self.beta_0 + t * (self.beta_1 - self.beta_0)
@@ -28,6 +31,8 @@ class VPODE(torch.nn.Module):
         drift, diffusion = self.vpsde_fn(t, x)
         ts = t.repeat(x.shape[0])
         score = self.model(x, ts)
+        if self.scale_sigma:
+            score = - score / torch.sqrt(1 - self.alphas_t(t))
 
         ode_coef = drift - 0.5 * diffusion ** 2 * score
         return ode_coef

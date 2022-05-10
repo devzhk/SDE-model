@@ -1,22 +1,12 @@
-import os, sys
-
-import random
-
-import matplotlib
-
 import matplotlib.pyplot as plt
 import numpy as np
-import sklearn.datasets
 
 import torch
 
 import torch.nn as nn
-from sklearn.datasets import make_swiss_roll
+from utils.helper import kde, scatter
 
-from models.ddpm import DDPM
-from utils.helper import kde
-
-torch.manual_seed(1)
+torch.manual_seed(2022)
 
 DIM = 512  # Model dimensionality
 
@@ -67,25 +57,12 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 
-class SwissRoll:
-    """
-    Swiss roll distribution sampler.
-    noise control the amount of noise injected to make a thicker swiss roll
-    """
-
-    def spl(self, n, noise=0.5):
-        return torch.from_numpy(
-            make_swiss_roll(n, noise)[0][:, [0, 2]].astype('float32') / 3.)
-
-
-sampler = SwissRoll()
-
 
 def plot_sample(y, fname, title):
     plt.style.use('seaborn-darkgrid')
     plt.figure()
     plt.title(title, fontsize=20)
-    plt.scatter(y[:, 0], y[:, 1], alpha=0.5, s=0.2, color='blue', marker='o', label='y')
+    plt.scatter(y[:, 0], y[:, 1], alpha=0.5, s=0.5, color='blue', marker='o', label='y')
     plt.savefig(fname)
     plt.close()
 
@@ -197,13 +174,14 @@ ckpt = torch.load('exp/ref_ddpm_25gm.pt', map_location=device)
 netG.load_state_dict(ckpt)
 netG = netG
 
-batchsize = 1000
+batchsize = 500
 
 sample_list = []
-for i in range(3):
+for i in range(9):
     sample_generated = sample_from_model(netG, batchsize, device, n_time=500)
     sample_list.append(sample_generated)
 
 data = torch.cat(sample_list, dim=0)
-plot_sample(data.detach().cpu().numpy(), 'figs/ref_ddpm_sample.png', 'sample score (discrete)')
-kde(data, 'figs/ref_ddpm_sampler.png', dim=2)
+scatter(data.detach().cpu().numpy(), 'figs/ref_ddpm_sample.png')
+# plot_sample(data.detach().cpu().numpy(), 'figs/ref_ddpm_sample.png', 'sample score (discrete)')
+# kde(data, 'figs/ref_ddpm_sampler.png', dim=2)

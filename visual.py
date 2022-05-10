@@ -1,12 +1,27 @@
-#%%
+# %%
 import numpy as np
 import matplotlib.pyplot as plt
 
 import torch
 import pandas as pd
 import seaborn as sns
+from utils.helper import scatter
 
-#%%
+dataset = []
+for i in range(10000 // 25):
+    for x in range(-2, 3):
+        for y in range(-2, 3):
+            point = np.random.randn(2) * 0.05
+            point[0] += 2 * x
+            point[1] += 2 * y
+            dataset.append(point)
+dataset = np.array(dataset, dtype='float32')
+np.random.shuffle(dataset)
+dataset /= 2.828  # stdev
+
+scatter(dataset, 'figs/ref_data.png')
+
+# %%
 # datafile = torch.load('data/25gm-test-v6.pt')
 # data = datafile['data'][:, -1, :].cpu().numpy()
 # mus = [[2.0, 2.0],
@@ -60,4 +75,3 @@ import seaborn as sns
 #
 # plt.show()
 # %%
-

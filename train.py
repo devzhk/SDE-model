@@ -15,20 +15,74 @@ from tqdm import tqdm
 
 from models.fno import FNN1d
 
-from utils.helper import kde, group_kde
+from utils.helper import kde, group_kde, count_params
 from utils.dataset import myOdeData, get_init
 
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
+
+def eval(model, dataloader, criterion,
+         device, config, plot=False):
+    t_dim = config['t_dim']
+    t_step = config['t_step']
+    num_t = math.ceil(t_dim / t_step)
+    logname = config['logname']
+    # prepare log dir
+    base_dir = f'exp/{logname}/'
+    save_img_dir = f'{base_dir}/figs'
+    os.makedirs(save_img_dir, exist_ok=True)
+
+    t0, t1 = 1., config['epsilon']
+    ts = torch.linspace(t0, t1, num_t)
+    model.eval()
+    pred_list = []
+    truth_list = []
+    with torch.no_grad():
+        test_err = 0
+        for states in dataloader:
+            ini_state = states[:, 0:1, :].repeat(1, num_t, 1)
+            in_state = get_init(ini_state, ts).to(device)
+            states = states.to(device)
+            pred = model(in_state)
+
+            pred_list.append(pred)
+            truth_list.append(states)
+            loss = criterion(pred, states)
+
+            test_err += loss.item()
+
+    test_err /= len(dataloader)
+    print(f'Test MSE of the whole trajectory: {test_err}')
+    final_pred = torch.cat(pred_list, dim=0)
+    final_states = torch.cat(truth_list, dim=0)
+
+    err_T = criterion(final_pred[:, -1, :], final_states[:, -1, :])
+    print(f'Test MSE at time 0: {err_T}')
+    if plot:
+        kde(final_pred[:, -1, :], save_file=f'{save_img_dir}/test_pred.png', dim=2)
+        kde(final_states[:, -1, :], save_file=f'{save_img_dir}/test_truth.png', dim=2)
+    print('Evaluation Done!')
+    return err_T
 
 
 def train(model, dataloader,
           criterion,
           optimizer, scheduler,
-          device, config):
+          device, config,
+          valloader=None,
+          testloader=None):
     t_dim = config['t_dim']
     t_step = config['t_step']
     num_t = math.ceil(t_dim / t_step)
     logname = config['logname']
     save_step = config['save_step']
+    use_wandb = config['use_wandb'] if 'use_wandb' in config else False
+    if use_wandb and wandb:
+        wandb.init()
+
     # prepare log dir
     base_dir = f'exp/{logname}/'
     save_img_dir = f'{base_dir}/figs'
@@ -62,28 +116,32 @@ def train(model, dataloader,
                 f'Epoch :{e}, Loss: {train_loss}'
             )
         )
+        log_state = {
+            'train MSE': train_loss
+        }
 
         if e % save_step == 0:
-            if dimension == 1:
-                zip_state = [pred[:, -1, 0].detach().numpy(), states[:, -1, 0].detach().numpy()]
-                labels = ['Prediction', 'Truth']
-                group_kde(zip_state, labels, f'{save_img_dir}/train_{e}.png')
-            elif dimension == 2:
-                kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_{e}_pred.png', dim=2)
-                kde(states[:, -1, :], save_file=f'{save_img_dir}/train_{e}_truth.png', dim=2)
-            # kde(pred[:, -1, 0].detach().numpy(), f'figs/1dGM/pred_{e}.png')
-            # kde(states[:, -1, 0].detach().numpy(), f'figs/1dGM/true_{e}.png')
+            kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_{e}_pred.png', dim=2)
+            kde(states[:, -1, :], save_file=f'{save_img_dir}/train_{e}_truth.png', dim=2)
             torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_{e}.pt')
+            # eval on validation set
+            if valloader:
+                val_err = eval(model, valloader, criterion,
+                               device, config)
+                log_state['val MSE'] = val_err
+        if use_wandb and wandb:
+            wandb.log(log_state)
 
-    if dimension == 1:
-        zip_state = [pred[:, -1, 0].detach().numpy(), states[:, -1, 0].detach().numpy()]
-        labels = ['Prediction', 'Truth']
-        group_kde(zip_state, labels, f'{save_img_dir}/train_final.png')
-    elif dimension == 2:
-        kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_final_pred.png', dim=2)
-        kde(states[:, -1, :], save_file=f'{save_img_dir}/train_final_truth.png', dim=2)
-
+    kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_final_pred.png', dim=2)
+    kde(states[:, -1, :], save_file=f'{save_img_dir}/train_final_truth.png', dim=2)
     torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_final.pt')
+    # test stage
+    test_err = eval(model, testloader, criterion, device, config, plot=True)
+    if use_wandb and wandb:
+        wandb.log({
+            'test MSE': test_err
+        })
+    print(f'test MSE : {test_err}')
 
 
 if __name__ == '__main__':
@@ -101,22 +159,35 @@ if __name__ == '__main__':
     batchsize = config['batchsize']
     dimension = config['dimension']
     
-    #
+    # training set
     num_sample = config['num_sample'] if 'num_sample' in config else None
-    dataset = myOdeData(config['datapath'], config['t_step'], num_sample)
-    train_loader = DataLoader(dataset, batch_size=batchsize, shuffle=False)
+    trainset = myOdeData(config['datapath'], config['t_step'], num_sample)
+    train_loader = DataLoader(trainset, batch_size=batchsize, shuffle=True)
+    # validation set
+    num_val_data = config['num_val_data'] if 'num_val_data' in config else None
+    valset = myOdeData(config['val_datapath'], config['t_step'], num_val_data)
+    val_loader = DataLoader(valset, batch_size=batchsize, shuffle=True)
+    # test set
+    testset = myOdeData(config['test_datapath'], config['t_step'])
+    test_loader = DataLoader(testset, batch_size=batchsize, shuffle=True)
+
+    # create model
     model = FNN1d(modes=config['modes'],
                   fc_dim=config['fc_dim'],
                   layers=config['layers'],
                   in_dim=dimension + 1, out_dim=dimension,
                   activation=config['activation']).to(device)
-
+    print(f'number of parameters: {count_params(model)}')
     # define optimizer and criterion
     optimizer = Adam(model.parameters(), lr=config['lr'])
     scheduler = MultiStepLR(optimizer,
                             milestones=config['milestone'],
                             gamma=0.5)
     criterion = nn.MSELoss()
+
+    # wandb initialization
+
+
     train(model, train_loader,
           criterion,
           optimizer, scheduler,

@@ -9,31 +9,15 @@ import torch
 from utils.helper import kde
 from mixture_sampler import OdeDiffusion, Gmm_score
 
-# os.environ['KMP_DUPLICATE_LIB_OK']= 'True'
-# def sample_normal(mu, sigma):
-#     sample = np.random.normal(mu, sigma)
-#     return sample
-#
-# num_sample = 3000
-#
-# mus = np.linspace(-1, 1, num=3)
-# sigma = 0.1
-#
-#
-# idx = np.random.randint(0, 3, size=num_sample)
-#
-# data = [sample_normal(mus[i], sigma) for i in idx]
-#
-# kde(data, save_file='figs/test_gmm.png')
 
 if __name__ == '__main__':
     parser = ArgumentParser(description=globals()['__doc__'])
     parser.add_argument('--step_size', type=float, default=1e-4, help='step size for ODE Euler method')
-    parser.add_argument('--seed', type=int, default=25651, help='Random seed')
-    parser.add_argument('--num_samples', type=int, default=50000, help='Number of samples')
-    parser.add_argument('--batch_size', type=int, default=10000, help='batch size')
+    parser.add_argument('--seed', type=int, default=2022, help='Random seed')
+    parser.add_argument('--num_samples', type=int, default=5000, help='Number of samples')
+    parser.add_argument('--batch_size', type=int, default=5000, help='batch size')
     parser.add_argument('--t_size', type=int, default=65, help='number of states in ode to save')
-    parser.add_argument('--dataname', type=str, default='25gm-test-v4-s65', help='name of the data file')
+    parser.add_argument('--dataname', type=str, default='25gm-val-v4-s65', help='name of the data file')
     parser.add_argument('--save_dir', type=str, default='25gm')
     parser.add_argument('--dimension', type=int, default=1, help='dimension of data')
     args = parser.parse_args()
@@ -50,7 +34,7 @@ if __name__ == '__main__':
 
     torch.backends.cudnn.benchmark = True
 
-    gmm_model = Gmm_score(dim=args.dimension, mu=2.0, sigma2=1e-2, num_modes=2)
+    gmm_model = Gmm_score(dim=args.dimension, mu=2.0, sigma2=1e-4, num_modes=25)
     ode_diffusion = OdeDiffusion(args, gmm_score=gmm_model, img_shape=[args.dimension], device=device).to(device)
     num_batch = args.num_samples // args.batch_size
     images_list = []

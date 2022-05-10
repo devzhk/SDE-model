@@ -107,6 +107,7 @@ sampler = inf_train_gen('25gaussians', batch_size)
 
 optimizer = Adam(score_model.parameters(), lr=lr)
 
+data_list = []
 for iteration in tqdm(range(n_iterations)):
 
     avg_loss = 0.
@@ -114,6 +115,8 @@ for iteration in tqdm(range(n_iterations)):
     real_data = sampler.__next__()
     x = torch.Tensor(real_data).to(device)
     # x = sampler.spl(batch_size).to(device)
+
+    data_list.append(x)
 
     loss = loss_fn(score_model, x)
     optimizer.zero_grad()
