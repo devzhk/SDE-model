@@ -19,7 +19,7 @@ if __name__ == '__main__':
     parser.add_argument('--t_size', type=int, default=65, help='number of states in ode to save')
     parser.add_argument('--dataname', type=str, default='25gm-val-v4-s65', help='name of the data file')
     parser.add_argument('--save_dir', type=str, default='25gm')
-    parser.add_argument('--dimension', type=int, default=1, help='dimension of data')
+    parser.add_argument('--dimension', type=int, default=2, help='dimension of data')
     args = parser.parse_args()
 
     # add device

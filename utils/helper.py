@@ -41,6 +41,8 @@ def kde(data, # 1d array
         plt.savefig(save_file, bbox_inches='tight')
         plt.cla()
         plt.close(fig)
+        if dim == 2:
+            plt.close(g.fig)
     else:
         plt.show()
 

@@ -1,24 +1,30 @@
 # data configuration
 datapath: data/25gm/25gm-train-v4-s65.pt
-num_sample: 10000
+num_sample: 5000
+t_dim: 65
+t_step: 32
+dimension: 2
+epsilon: 0.00001
 
 # training
 num_epoch: 2000
 batchsize: 512
 lr: 0.001
-t_dim: 65
-t_step: 32
-dimension: 2
-epsilon: 0.00001
+
 milestone: [400, 800, 1200, 1600]
 
 # model , 2, 6 - 4, 8
-layers: [16, 16, 16, 16]
-modes: [2, 2, 2]
+layers: [32, 32, 32, 32, 32]
+modes: [2, 2, 2, 2]
 fc_dim: 8
 activation: 'gelu'
 
-
 # log
-logname: 25gm-v4-s3-10k
-save_step: 500
+logname: 25gm-v4-s5-32-l4-5k
+save_step: 200
+use_wandb: True
+
+# if using wandb, specify the following
+entity: hzzheng
+project: DM-simulation
+group: operator-s5-5k

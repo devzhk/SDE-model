@@ -19,9 +19,6 @@ from utils.dataset import get_init, myOdeData
 
 def eval(model, dataloader, criterion, 
          device, config):
-    t_dim = config['t_dim']
-    t_step = config['t_step']
-    num_t = math.ceil(t_dim / t_step)
     logname = config['logname']
     # prepare log dir
     base_dir = f'exp/{logname}/'
@@ -31,8 +28,6 @@ def eval(model, dataloader, criterion,
     save_ckpt_dir = f'{base_dir}/ckpts'
     os.makedirs(save_ckpt_dir, exist_ok=True)
 
-    t0, t1 = 1., config['epsilon']
-    ts = torch.linspace(t0, t1, num_t)
     model.eval()
     pred_list = []
     truth_list = []

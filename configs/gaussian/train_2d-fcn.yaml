@@ -1,22 +1,34 @@
-# data configuration
+# training data
 datapath: data/25gm/25gm-train-v4-s65.pt
 num_sample: 5000
-
-# training
-num_epoch: 5000
-batchsize: 512
-lr: 0.001
 t_dim: 65
 t_step: 32
 dimension: 2
 epsilon: 0.00001
-milestone: [1000, 2000, 3000, 4000]
+
+# validation data
+val_datapath: data/25gm/25gm-val-v4-s65.pt
+num_val_data: 5000
+# test data
+test_datapath: data/25gm/25gm-test-v4-s65.pt
+
+# training
+num_epoch: 8000
+batchsize: 512
+lr: 0.001
+milestone: [1000, 2000, 3000, 4000, 5000, 6000, 7000]
 
 # model , 2, 6 - 4, 8
-layers: [2, 300, 300, 300, 300, 2]
+layers: [2, 48, 48, 48, 48, 2]
 activation: 'gelu'
 
 
 # log
-logname: 25gm-v4-FCN-300-l4-5k
-save_step: 500
+logname: 25gm-v4-FCN-48-l4-5k
+save_step: 200
+use_wandb: True
+
+# if using wandb, specify the following
+entity: hzzheng
+project: DM-simulation
+group: DirectKD

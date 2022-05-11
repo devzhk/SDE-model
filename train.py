@@ -1,5 +1,6 @@
 import os
 import math
+import random
 import yaml
 from argparse import ArgumentParser
 
@@ -55,16 +56,15 @@ def eval(model, dataloader, criterion,
             test_err += loss.item()
 
     test_err /= len(dataloader)
-    print(f'Test MSE of the whole trajectory: {test_err}')
+    print(f'MSE of the whole trajectory: {test_err}')
     final_pred = torch.cat(pred_list, dim=0)
     final_states = torch.cat(truth_list, dim=0)
 
     err_T = criterion(final_pred[:, -1, :], final_states[:, -1, :])
-    print(f'Test MSE at time 0: {err_T}')
+    print(f'MSE at time 0: {err_T}')
     if plot:
         kde(final_pred[:, -1, :], save_file=f'{save_img_dir}/test_pred.png', dim=2)
         kde(final_states[:, -1, :], save_file=f'{save_img_dir}/test_truth.png', dim=2)
-    print('Evaluation Done!')
     return err_T
 
 
@@ -81,7 +81,10 @@ def train(model, dataloader,
     save_step = config['save_step']
     use_wandb = config['use_wandb'] if 'use_wandb' in config else False
     if use_wandb and wandb:
-        wandb.init()
+        wandb.init(entity=config['entity'],
+                   project=config['project'],
+                   group=config['group'],
+                   config=config)
 
     # prepare log dir
     base_dir = f'exp/{logname}/'
@@ -126,16 +129,16 @@ def train(model, dataloader,
             torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_{e}.pt')
             # eval on validation set
             if valloader:
+                print('start evaluating on validation set...')
                 val_err = eval(model, valloader, criterion,
                                device, config)
                 log_state['val MSE'] = val_err
         if use_wandb and wandb:
             wandb.log(log_state)
-
-    kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_final_pred.png', dim=2)
-    kde(states[:, -1, :], save_file=f'{save_img_dir}/train_final_truth.png', dim=2)
+    # kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_final_pred.png', dim=2)
+    # kde(states[:, -1, :], save_file=f'{save_img_dir}/train_final_truth.png', dim=2)
     torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_final.pt')
-    # test stage
+    # test
     test_err = eval(model, testloader, criterion, device, config, plot=True)
     if use_wandb and wandb:
         wandb.log({
@@ -146,13 +149,20 @@ def train(model, dataloader,
 
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
-    parser.add_argument('--config', type=str, default='configs/gaussian/train_2d-s65.yaml', help='configuration file')
+    parser.add_argument('--config', type=str, default='configs/gaussian/train_2d-s9.yaml', help='configuration file')
     parser.add_argument('--log', action='store_true', help='turn on the wandb')
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
         config = yaml.load(f, yaml.FullLoader)
 
+    # set random seed
+    seed = random.randint(0, 100000)
+    torch.manual_seed(seed)
+    random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    config['seed'] = seed
     # parse configuration file
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     num_epoch = config['num_epoch']
@@ -177,7 +187,9 @@ if __name__ == '__main__':
                   layers=config['layers'],
                   in_dim=dimension + 1, out_dim=dimension,
                   activation=config['activation']).to(device)
-    print(f'number of parameters: {count_params(model)}')
+    num_params = count_params(model)
+    print(f'number of parameters: {num_params}')
+    config['num_params'] = num_params
     # define optimizer and criterion
     optimizer = Adam(model.parameters(), lr=config['lr'])
     scheduler = MultiStepLR(optimizer,
@@ -185,11 +197,10 @@ if __name__ == '__main__':
                             gamma=0.5)
     criterion = nn.MSELoss()
 
-    # wandb initialization
-
-
     train(model, train_loader,
           criterion,
           optimizer, scheduler,
-          device, config)
+          device, config,
+          valloader=test_loader,
+          testloader=test_loader)
 
