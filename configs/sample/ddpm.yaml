@@ -8,16 +8,16 @@ beta_min: 0.1
 beta_max: 20
 
 # sample
-seed: 1500
-batchsize: 5000
-ckpt: score_final.pt
-num_samples: 10000
+seed: 13244
+batchsize: 10000
+ckpt: ddpm-final.pt
+num_samples: 50000
 step_size: 0.001
 t_size: 65
 scale: True
 
 # log config
-logname: ddpm-01
-dataname: ddpm-01
+logname: ddpm-02
+dataname: ddpm-02-train
 
 

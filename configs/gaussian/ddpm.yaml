@@ -10,13 +10,13 @@ beta_max: 20
 num_scales: 1000
 
 # training
-num_epoch: 1500
+num_epoch: 3000
 batchsize: 1000
 lr: 0.001
-milestone: [1000]
+milestone: [1500]
 
 # log config
-logname: ddpm-01
+logname: ddpm-02
 save_step: 500
 
 

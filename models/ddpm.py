@@ -42,7 +42,7 @@ class DDPM(nn.Module):
         # self.actitvation = get_act(config)
         self.dim_temb = config['temb_dim']
         self.x_dim = x_dim = config['x_dim']
-        DIM = 256
+        DIM = 512
         self.net = nn.Sequential(
             nn.Linear(self.dim_temb + x_dim, DIM),
             nn.Softplus(),
@@ -60,8 +60,8 @@ class DDPM(nn.Module):
         out = self.net(feature)
         return out
 
-class Generator(nn.Module):
 
+class Generator(nn.Module):
     def __init__(self):
         super(Generator, self).__init__()
         DIM = 512

@@ -27,7 +27,7 @@ if __name__ == '__main__':
     seed = config['seed']
     logname = config['logname']
     dataname = config['dataname']
-    base_dir = f'exp/{logname}/'
+    base_dir = f'exp/{logname}'
     save_ckpt_dir = f'{base_dir}/ckpts'
     sample_dir = f'{base_dir}/samples'
     os.makedirs(sample_dir, exist_ok=True)
@@ -52,10 +52,10 @@ if __name__ == '__main__':
 
     torch.backends.cudnn.benchmark = True
 
-    # model = DDPM(config).to(device)
-    model = Generator().to(device)
-    ckpt = torch.load('exp/ref_ddpm_25gm.pt', map_location=device)
-    # ckpt = torch.load(ckpt_path, map_location=device)
+    model = DDPM(config).to(device)
+    # model = Generator().to(device)
+    # ckpt = torch.load('exp/ref_ddpm_25gm.pt', map_location=device)
+    ckpt = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(ckpt)
     print(scale_sigma)
     vpode = VPODE(model, beta_min, beta_max, scale_sigma=scale_sigma)
@@ -65,13 +65,13 @@ if __name__ == '__main__':
     for i in range(num_batch):
         images_batch = ode_diff.uncond_sample(batchsize, bs_id=-1)
         images_list.append(images_batch)
-    data = torch.cat(images_list, dim=0)
+    data = torch.cat(images_list, dim=0).detach().cpu()
 
     xT_fig_name = os.path.join(sample_dir, f'xT_{dataname}_{seed}.png')
     x0_fig_name = os.path.join(sample_dir, f'x0_{dataname}_{seed}.png')
     kde(data[:, 0, :], xT_fig_name, dim=2)
-    # kde(data[:, -1, :], x0_fig_name, dim=2)
-    scatter(data[:, -1, :].detach().cpu().numpy(), x0_fig_name)
+    kde(data[:, -1, :], x0_fig_name, dim=2)
+    # scatter(data[:, -1, :].detach().cpu().numpy(), x0_fig_name)
     torch.save(
         {
             'data': data,

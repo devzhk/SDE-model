@@ -1,6 +1,6 @@
 # training data
 datapath: data/25gm/25gm-train-v4-s65.pt
-num_sample: 5000
+num_sample: 50000
 t_dim: 65
 t_step: 32
 dimension: 2
@@ -19,16 +19,16 @@ lr: 0.001
 milestone: [1000, 2000, 3000, 4000, 5000, 6000, 7000]
 
 # model , 2, 6 - 4, 8
-layers: [2, 48, 48, 48, 48, 2]
+layers: [2, 56, 56, 56, 56, 2]
 activation: 'gelu'
 
 
 # log
-logname: 25gm-v4-FCN-48-l4-5k
+logname: 25gm-v4-FCN-56-l4-50k
 save_step: 200
 use_wandb: True
 
 # if using wandb, specify the following
 entity: hzzheng
 project: DM-simulation
-group: DirectKD
+group: DirectKD-50k
