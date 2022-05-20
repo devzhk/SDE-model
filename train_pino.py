@@ -1,24 +1,59 @@
-import math
 import os
+import math
 import random
+import yaml
 from argparse import ArgumentParser
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
-import yaml
-from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
-from tqdm import tqdm
+from torch.optim.lr_scheduler import MultiStepLR
+from utils.optim import Adam
 
 from models.fno import FNN1d
+from models.ddpm import DDPM
+
+from utils.helper import kde, group_kde, count_params
 from utils.dataset import myOdeData, get_init
-from utils.helper import kde, count_params
-from utils.optim import Adam
 
 try:
     import wandb
 except ImportError:
     wandb = None
+
+
+class VPODE(nn.Module):
+    def __init__(self, model, beta_min, beta_max, scale_sigma=False):
+        """Construct a Variance Preserving SDE.
+        Args:
+          model: diffusion model
+          beta_min: value of beta(0)
+          beta_max: value of beta(1)
+        """
+        super().__init__()
+        self.model = model
+        self.beta_0 = beta_min
+        self.beta_1 = beta_max
+        self.alphas_t = lambda t: torch.exp(-0.5 * (beta_max - beta_min) * t ** 2 - beta_min * t)
+        self.scale_sigma = scale_sigma
+
+    def vpsde_fn(self, t, x):
+        beta_t = self.beta_0 + t * (self.beta_1 - self.beta_0)
+        drift = -0.5 * beta_t * x
+        diffusion = torch.sqrt(beta_t)
+        return drift, diffusion
+
+    def ode_fn(self, t, x):
+        """Create the drift and diffusion functions for the reverse SDE"""
+        drift, diffusion = self.vpsde_fn(t, x)
+        # ts = t.repeat(x.shape[0])
+        score = self.model(x, t)
+        if self.scale_sigma:
+            score = - score / torch.sqrt(1 - self.alphas_t(t))
+
+        ode_coef = drift - 0.5 * diffusion ** 2 * score
+        return ode_coef
 
 
 def eval(model, dataloader, criterion,
@@ -68,6 +103,7 @@ def train(model, dataloader,
           criterion,
           optimizer, scheduler,
           device, config,
+          vpode,                    # ODE
           valloader=None,
           testloader=None):
     t_dim = config['t_dim']
@@ -77,12 +113,10 @@ def train(model, dataloader,
     save_step = config['save_step']
     use_wandb = config['use_wandb'] if 'use_wandb' in config else False
     if use_wandb and wandb:
-        run = wandb.init(entity=config['entity'],
-                         project=config['project'],
-                         group=config['group'],
-                         config=config,
-                         reinit=True,
-                         settings=wandb.Settings(start_method='fork'))
+        wandb.init(entity=config['entity'],
+                   project=config['project'],
+                   group=config['group'],
+                   config=config)
 
     # prepare log dir
     base_dir = f'exp/{logname}/'
@@ -105,6 +139,8 @@ def train(model, dataloader,
 
             pred = model(in_state)
             loss = criterion(pred, states)
+
+
             # update model
             model.zero_grad()
             loss.backward()
@@ -133,6 +169,8 @@ def train(model, dataloader,
                 log_state['val MSE'] = val_err
         if use_wandb and wandb:
             wandb.log(log_state)
+    # kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_final_pred.png', dim=2)
+    # kde(states[:, -1, :], save_file=f'{save_img_dir}/train_final_truth.png', dim=2)
     torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_final.pt')
     # test
     test_err = eval(model, testloader, criterion, device, config, plot=True)
@@ -140,13 +178,18 @@ def train(model, dataloader,
         wandb.log({
             'test MSE': test_err
         })
-        run.finish()
-
     print(f'test MSE : {test_err}')
 
 
-def run(train_loader, val_loader, test_loader,
-        config, device):
+if __name__ == '__main__':
+    parser = ArgumentParser(description='Basic parser')
+    parser.add_argument('--config', type=str, default='configs/gaussian/train_2d-s9.yaml', help='configuration file')
+    parser.add_argument('--log', action='store_true', help='turn on the wandb')
+    args = parser.parse_args()
+
+    with open(args.config, 'r') as f:
+        config = yaml.load(f, yaml.FullLoader)
+
     # set random seed
     seed = random.randint(0, 100000)
     torch.manual_seed(seed)
@@ -154,6 +197,24 @@ def run(train_loader, val_loader, test_loader,
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
     config['seed'] = seed
+    # parse configuration file
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    num_epoch = config['num_epoch']
+    batchsize = config['batchsize']
+    dimension = config['dimension']
+    
+    # training set
+    num_sample = config['num_sample'] if 'num_sample' in config else None
+    trainset = myOdeData(config['datapath'], config['t_step'], num_sample)
+    train_loader = DataLoader(trainset, batch_size=batchsize, shuffle=True)
+    # validation set
+    num_val_data = config['num_val_data'] if 'num_val_data' in config else None
+    valset = myOdeData(config['val_datapath'], config['t_step'], num_val_data)
+    val_loader = DataLoader(valset, batch_size=batchsize, shuffle=True)
+    # test set
+    testset = myOdeData(config['test_datapath'], config['t_step'])
+    test_loader = DataLoader(testset, batch_size=batchsize, shuffle=True)
+
     # create model
     model = FNN1d(modes=config['modes'],
                   fc_dim=config['fc_dim'],
@@ -169,44 +230,19 @@ def run(train_loader, val_loader, test_loader,
                             milestones=config['milestone'],
                             gamma=0.5)
     criterion = nn.MSELoss()
+    # define score function, and ode class
+    score_model = DDPM(config).to(device)
+    score_ckpt = torch.load(config['score_path'], map_location=device)
+    score_model.load_state_dict(score_ckpt)
+    ode = VPODE(model,
+                beta_min=config['beta_min'],
+                beta_max=config['beta_max'],
+                scale_sigma=config['scale'])
     train(model, train_loader,
           criterion,
           optimizer, scheduler,
           device, config,
+          vpode=ode,
           valloader=test_loader,
           testloader=test_loader)
 
-
-if __name__ == '__main__':
-    parser = ArgumentParser(description='Basic parser')
-    parser.add_argument('--config', type=str, default='configs/gaussian/train_2d-s9.yaml', help='configuration file')
-    parser.add_argument('--log', action='store_true', help='turn on the wandb')
-    parser.add_argument('--repeat', type=int, default=1)
-    args = parser.parse_args()
-
-    with open(args.config, 'r') as f:
-        config = yaml.load(f, yaml.FullLoader)
-
-    # parse configuration file
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    batchsize = config['batchsize']
-    dimension = config['dimension']
-    if args.log:
-        config['use_wandb'] = True
-    else:
-        config['use_wandb'] = False
-    # training set
-    num_sample = config['num_sample'] if 'num_sample' in config else None
-    trainset = myOdeData(config['datapath'], config['t_step'], num_sample)
-    train_loader = DataLoader(trainset, batch_size=batchsize, shuffle=True)
-    # validation set
-    num_val_data = config['num_val_data'] if 'num_val_data' in config else None
-    valset = myOdeData(config['val_datapath'], config['t_step'], num_val_data)
-    val_loader = DataLoader(valset, batch_size=batchsize, shuffle=True)
-    # test set
-    testset = myOdeData(config['test_datapath'], config['t_step'])
-    test_loader = DataLoader(testset, batch_size=batchsize, shuffle=True)
-
-    for i in range(args.repeat):
-        run(train_loader, test_loader, test_loader, config, device)
-    print(f'{args.repeat} runs done!')

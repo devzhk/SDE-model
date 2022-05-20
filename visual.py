@@ -1,12 +1,23 @@
 # %%
-import numpy as np
-import matplotlib.pyplot as plt
-
-import torch
-import pandas as pd
-import seaborn as sns
 from utils.helper import scatter
+import seaborn as sns
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from mixture_sampler import Gmm_score, VPODE
+import torch
 
+# %%
+gmm = Gmm_score(dim=2, mu=2.0, sigma2=1e-4, num_modes=25)
+ode = VPODE(gmm)
+
+# %%
+ts = torch.linspace(0, 1, 10)
+xt = torch.randn(3, 10, 2)
+# %%
+that = torch.fft.rfft
+
+# %%
 dataset = []
 for i in range(10000 // 25):
     for x in range(-2, 3):

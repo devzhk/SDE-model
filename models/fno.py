@@ -1,9 +1,10 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from .base import SpectralConv1d, SpectralConv2d, SpectralConv3d
+from .base import SpectralConv1d, SpectralConv2d, SpectralConv3d, _get_act
 '''
 FNO 1d
 '''
+
 
 class FNN1d(nn.Module):
     def __init__(self,
@@ -42,14 +43,7 @@ class FNN1d(nn.Module):
 
         self.fc1 = nn.Linear(layers[-1], fc_dim)
         self.fc2 = nn.Linear(fc_dim, out_dim)
-        if activation == 'tanh':
-            self.activation = F.tanh
-        elif activation == 'gelu':
-            self.activation = F.gelu
-        elif activation == 'relu':
-            self.activation == F.relu
-        else:
-            raise ValueError(f'{activation} is not supported')
+        self.activation = _get_act(activation)
 
     def forward(self, x):
         length = len(self.ws)
@@ -116,14 +110,7 @@ class FNN2d(nn.Module):
 
         self.fc1 = nn.Linear(layers[-1], fc_dim)
         self.fc2 = nn.Linear(fc_dim, out_dim)
-        if activation == 'tanh':
-            self.activation = F.tanh
-        elif activation == 'gelu':
-            self.activation = F.gelu
-        elif activation == 'relu':
-            self.activation == F.relu
-        else:
-            raise ValueError(f'{activation} is not supported')
+        self.activation = _get_act(activation)
 
     def forward(self, x):
         '''
@@ -189,15 +176,7 @@ class FNN3d(nn.Module):
 
         self.fc1 = nn.Linear(layers[-1], fc_dim)
         self.fc2 = nn.Linear(fc_dim, out_dim)
-
-        if activation == 'tanh':
-            self.activation = F.tanh
-        elif activation == 'gelu':
-            self.activation = F.gelu
-        elif activation == 'relu':
-            self.activation == F.relu
-        else:
-            raise ValueError(f'{activation} is not supported')
+        self.activation = _get_act(activation)
 
     def forward(self, x):
         '''

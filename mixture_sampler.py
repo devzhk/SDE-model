@@ -104,12 +104,9 @@ class Gmm_score(object):
             x_exp = torch.exp(x - maxes)
             x_exp_sum = torch.sum(x_exp, 1, keepdim=True)
             return x_exp / x_exp_sum
-
         # gmm_coef_t = torch.softmax(logits_t, dim=1)  # [bs, mn]
         gmm_coef_t = own_softmax(logits_t)  # [bs, mn]
-
         score = -1 / sigma2_t * (x_t - torch.mm(gmm_coef_t, mus_t))
-
         # alpha_t = self.alphas_t(t)
         # mus_t = mus * torch.sqrt(alpha_t)
         # sigma2_t = 1 - (1 - self.sigma2) * alpha_t
@@ -130,13 +127,6 @@ class Gmm_score(object):
         #
         # # print(gs_scores)
         # score = sum([p * s for (p, s) in zip(probs, gs_scores)]) / sum(probs)  # [bs, 2]
-
-        '''
-        # log prob
-        log_prop = torch.log(sum(probs)) + torch.log(torch.tensor(0.25))
-        print(f'log_prop: {log_prop}')
-        '''
-
         # return score.detach().clone()
         return score
 

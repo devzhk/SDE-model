@@ -1,23 +1,18 @@
 import os
-import math
 import random
-import yaml
 from argparse import ArgumentParser
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
-
+import yaml
 from torch.optim.lr_scheduler import MultiStepLR
-from utils.optim import Adam
-
-
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from models.fcn import FCN
-
-from utils.helper import kde, group_kde, count_params
 from utils.dataset import myOdeData
+from utils.helper import kde, count_params
+from utils.optim import Adam
 
 try:
     import wandb
@@ -75,10 +70,12 @@ def train(model, dataloader,
     # wandb initialization
     use_wandb = config['use_wandb'] if 'use_wandb' in config else False
     if use_wandb and wandb:
-        wandb.init(entity=config['entity'],
-                   project=config['project'],
-                   group=config['group'],
-                   config=config)
+        run = wandb.init(entity=config['entity'],
+                         project=config['project'],
+                         group=config['group'],
+                         config=config,
+                         reinit=True,
+                         settings=wandb.Settings(start_method='fork'))
 
     logname = config['logname']
     save_step = config['save_step']
@@ -137,18 +134,12 @@ def train(model, dataloader,
         wandb.log({
             'test MSE': test_err
         })
+        run.finish()
     print(f'test MSE : {test_err}')
 
 
-if __name__ == '__main__':
-    parser = ArgumentParser(description='Basic parser')
-    parser.add_argument('--config', type=str, default='configs/gaussian/train_2d-fcn.yaml', help='configuration file')
-    parser.add_argument('--log', action='store_true', help='turn on the wandb')
-    args = parser.parse_args()
-
-    with open(args.config, 'r') as f:
-        config = yaml.load(f, yaml.FullLoader)
-
+def run(train_loader, val_loader, test_loader,
+        config, device):
     # set random seed
     seed = random.randint(0, 100000)
     torch.manual_seed(seed)
@@ -156,24 +147,6 @@ if __name__ == '__main__':
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
     config['seed'] = seed
-    # parse configuration file
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    num_epoch = config['num_epoch']
-    batchsize = config['batchsize']
-    dimension = config['dimension']
-
-    # training set
-    num_sample = config['num_sample'] if 'num_sample' in config else None
-    trainset = myOdeData(config['datapath'], config['t_step'], num_sample)
-    train_loader = DataLoader(trainset, batch_size=batchsize, shuffle=True)
-    # validation set
-    num_val_data = config['num_val_data'] if 'num_val_data' in config else None
-    valset = myOdeData(config['val_datapath'], config['t_step'], num_val_data)
-    val_loader = DataLoader(valset, batch_size=batchsize, shuffle=True)
-    # test set
-    testset = myOdeData(config['test_datapath'], config['t_step'])
-    test_loader = DataLoader(testset, batch_size=batchsize, shuffle=True)
-
     # create model
     model = FCN(layers=config['layers'], activation=config['activation']).to(device)
     num_params = count_params(model)
@@ -192,3 +165,37 @@ if __name__ == '__main__':
           valloader=test_loader,
           testloader=test_loader)
 
+
+if __name__ == '__main__':
+    parser = ArgumentParser(description='Basic parser')
+    parser.add_argument('--config', type=str, default='configs/gaussian/train_2d-fcn.yaml', help='configuration file')
+    parser.add_argument('--log', action='store_true', help='turn on the wandb')
+    parser.add_argument('--repeat', type=int, default=1)
+    args = parser.parse_args()
+
+    with open(args.config, 'r') as f:
+        config = yaml.load(f, yaml.FullLoader)
+
+    # parse configuration file
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    batchsize = config['batchsize']
+    dimension = config['dimension']
+    if args.log:
+        config['use_wandb'] = True
+    else:
+        config['use_wandb'] = False
+    # training set
+    num_sample = config['num_sample'] if 'num_sample' in config else None
+    trainset = myOdeData(config['datapath'], config['t_step'], num_sample)
+    train_loader = DataLoader(trainset, batch_size=batchsize, shuffle=True)
+    # validation set
+    num_val_data = config['num_val_data'] if 'num_val_data' in config else None
+    valset = myOdeData(config['val_datapath'], config['t_step'], num_val_data)
+    val_loader = DataLoader(valset, batch_size=batchsize, shuffle=True)
+    # test set
+    testset = myOdeData(config['test_datapath'], config['t_step'])
+    test_loader = DataLoader(testset, batch_size=batchsize, shuffle=True)
+
+    for i in range(args.repeat):
+        run(train_loader, test_loader, test_loader, config, device)
+    print(f'{args.repeat} runs done!')

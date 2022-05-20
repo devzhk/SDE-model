@@ -19,17 +19,17 @@ lr: 0.002
 milestone: [1000, 2000, 3000, 4000, 5000, 6000, 7000]
 
 # model , 2, 6 - 4, 8
-layers: [24, 24, 24, 24, 24]
+layers: [36, 36, 36, 36, 36]
 modes: [3, 3, 3, 3]
 fc_dim: 16
-activation: 'gelu'
+activation: 'leaky_relu'
 
 # log
-logname: 25gm-v4-s5-24-l4-50k
+logname: 25gm-v4-s5-36-l4-50k
 save_step: 200
 use_wandb: True
 
 # if using wandb, specify the following
 entity: hzzheng
-project: DM-simulation
+project: Diffusion-Gaussian
 group: operator-s5-50k

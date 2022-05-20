@@ -13,7 +13,6 @@ from utils.ddpm_sampler import VPODE, OdeDiffusion
 from utils.helper import kde, scatter
 
 
-
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
     parser.add_argument('--config', type=str, default='configs/sample/ddpm.yaml', help='configuration file')

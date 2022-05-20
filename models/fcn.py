@@ -1,16 +1,5 @@
 import torch.nn as nn
-import torch.nn.functional as F
-
-def _get_act(activation):
-    if activation == 'tanh':
-        func = F.tanh
-    elif activation == 'gelu':
-        func = F.gelu
-    elif activation == 'relu':
-        func = F.relu
-    else:
-        raise ValueError(f'{activation} is not supported')
-    return func
+from .base import _get_act
 
 
 class FCN(nn.Module):
