@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import yaml
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
@@ -26,6 +27,7 @@ def eval(model, dataloader, criterion,
     t_dim = config['t_dim']
     t_step = config['t_step']
     num_t = math.ceil(t_dim / t_step)
+    num_pad = config['num_pad'] if 'num_pad' in config else 5
     logname = config['logname']
     # prepare log dir
     base_dir = f'exp/{logname}/'
@@ -42,9 +44,11 @@ def eval(model, dataloader, criterion,
         for states in dataloader:
             ini_state = states[:, 0:1, :].repeat(1, num_t, 1)
             in_state = get_init(ini_state, ts).to(device)
+            in_state = F.pad(in_state, (0, 0, 0, num_pad), 'constant', 0)
             states = states.to(device)
             pred = model(in_state)
-
+            if num_pad > 0:
+                pred = pred[:, :-num_pad, :]
             pred_list.append(pred)
             truth_list.append(states)
             loss = criterion(pred, states)
@@ -74,6 +78,7 @@ def train(model, dataloader,
     t_step = config['t_step']
     num_t = math.ceil(t_dim / t_step)
     logname = config['logname']
+    num_pad = config['num_pad'] if 'num_pad' in config else 5
     save_step = config['save_step']
     use_wandb = config['use_wandb'] if 'use_wandb' in config else False
     if use_wandb and wandb:
@@ -101,9 +106,12 @@ def train(model, dataloader,
         for states in dataloader:
             ini_state = states[:, 0:1, :].repeat(1, num_t, 1)
             in_state = get_init(ini_state, ts).to(device)
+            in_state = F.pad(in_state, (0, 0, 0, num_pad), 'constant', 0)
             states = states.to(device)
 
             pred = model(in_state)
+            if num_pad > 0:
+                pred = pred[:, :-num_pad, :]
             loss = criterion(pred, states)
             # update model
             model.zero_grad()

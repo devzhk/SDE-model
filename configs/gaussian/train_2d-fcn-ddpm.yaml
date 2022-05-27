@@ -19,16 +19,15 @@ lr: 0.001
 milestone: [1000, 2000, 3000, 4000, 5000, 6000, 7000]
 
 # model , 2, 6 - 4, 8
-layers: [2, 32, 32, 32, 32, 2]
-activation: 'gelu'
-
+layers: [2, 128, 128, 128, 128, 2]
+activation: 'leaky_relu'
 
 # log
-logname: 25gm-v4-FCN-32-l4-50k-ddpm
+logname: 25gm-v4-FCN-128-l4-50k-ddpm
 save_step: 200
 use_wandb: True
 
 # if using wandb, specify the following
 entity: hzzheng
-project: DM-simulation
+project: Diffusion-Gaussian
 group: DirectKD-50k-ddpm

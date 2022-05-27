@@ -1,8 +1,8 @@
-# training data
+# data configuration
 datapath: data/25gm/25gm-train-v4-s65.pt
 num_sample: 50000
 t_dim: 65
-t_step: 8
+t_step: 1
 dimension: 2
 epsilon: 0.00001
 
@@ -11,25 +11,31 @@ val_datapath: data/25gm/25gm-val-v4-s65.pt
 num_val_data: 5000
 # test data
 test_datapath: data/25gm/25gm-test-v4-s65.pt
+# score model
+beta_min: 0.1
+beta_max: 20
 
 # training
-num_epoch: 8000
+num_epoch: 5000
 batchsize: 512
-lr: 0.002
-milestone: [1000, 2000, 3000, 4000, 5000, 6000, 7000]
+lr: 0.001
+milestone: [1000, 2000, 3000, 4000]
+eq_weight: 0.1
+num_pad: 5
 
 # model , 2, 6 - 4, 8
-layers: [20, 20, 20, 20, 20]
-modes: [4, 4, 4, 4]
+layers: [24, 24, 24, 24, 24]
+modes: [8, 8, 8, 8]
 fc_dim: 16
-activation: 'leaky_relu'
+activation: 'tanh'
 
 # log
-logname: 25gm-v4-s9-24-l4-50k
+logname: 25gm-v4-24-m8-s65
 save_step: 200
 use_wandb: True
 
 # if using wandb, specify the following
 entity: hzzheng
-project: Diffusion-Gaussian
-group: operator-s9-50k
+project: DM-simulation
+group: PINO-s65-50k
+

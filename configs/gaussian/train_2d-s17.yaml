@@ -19,13 +19,13 @@ lr: 0.002
 milestone: [1000, 2000, 3000, 4000, 5000, 6000, 7000]
 
 # model , 2, 6 - 4, 8
-layers: [20, 20, 20, 20, 20]
+layers: [16, 16, 16, 16, 16]
 modes: [8, 8, 8, 8]
 fc_dim: 16
 activation: 'leaky_relu'
 
 # log
-logname: 25gm-v4-20-s17
+logname: 25gm-v4-16-s17
 save_step: 200
 use_wandb: True
 

@@ -22,7 +22,7 @@ milestone: [1000, 2000, 3000, 4000, 5000, 6000, 7000]
 layers: [32, 32, 32, 32, 32]
 modes: [4, 4, 4, 4]
 fc_dim: 16
-activation: 'gelu'
+activation: 'leaky_relu'
 
 # log
 logname: 25gm-v4-s9-32-l4-50k-ddpm
@@ -31,5 +31,5 @@ use_wandb: True
 
 # if using wandb, specify the following
 entity: hzzheng
-project: DM-simulation
+project: Diffusion-Gaussian
 group: operator-s9-50k-ddpm
