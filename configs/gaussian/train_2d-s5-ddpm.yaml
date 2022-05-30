@@ -23,6 +23,7 @@ layers: [16, 16, 16, 16, 16]
 modes: [3, 3, 3, 3]
 fc_dim: 16
 activation: 'leaky_relu'
+num_pad: 1
 
 # log
 logname: 25gm-v4-s5-16-l4-50k-ddpm
