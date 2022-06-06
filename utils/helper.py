@@ -1,10 +1,15 @@
+import sys
+import argparse
+from typing import Any
+
 from collections import OrderedDict
 import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
 
 import torch
-from .sde_lib import VPSDE, VESDE, subVPSDE
+import jax
+# from .sde_lib import VPSDE, VESDE, subVPSDE
 
 
 def count_params(model):
@@ -74,11 +79,86 @@ def group_kde(data, labels,
         plt.show()
 
 
+
+class Logger(object):
+    """
+    Redirect stderr to stdout, optionally print stdout to a file,
+    and optionally force flushing on both stdout and the file.
+    """
+
+    def __init__(self, file_name: str = None, file_mode: str = "w", should_flush: bool = True):
+        self.file = None
+
+        if file_name is not None:
+            self.file = open(file_name, file_mode)
+
+        self.should_flush = should_flush
+        self.stdout = sys.stdout
+        self.stderr = sys.stderr
+
+        sys.stdout = self
+        sys.stderr = self
+
+    def __enter__(self) -> "Logger":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        self.close()
+
+    def write(self, text: str) -> None:
+        """Write text to stdout (and a file) and optionally flush."""
+        if len(text) == 0: # workaround for a bug in VSCode debugger: sys.stdout.write(''); sys.stdout.flush() => crash
+            return
+
+        if self.file is not None:
+            self.file.write(text)
+
+        self.stdout.write(text)
+
+        if self.should_flush:
+            self.flush()
+
+    def flush(self) -> None:
+        """Flush written text to both stdout and a file, if open."""
+        if self.file is not None:
+            self.file.flush()
+
+        self.stdout.flush()
+
+    def close(self) -> None:
+        """Flush, close possible files, and remove stdout/stderr mirroring."""
+        self.flush()
+
+        # if using multiple loggers, prevent closing in wrong order
+        if sys.stdout is self:
+            sys.stdout = self.stdout
+        if sys.stderr is self:
+            sys.stderr = self.stderr
+
+        if self.file is not None:
+            self.file.close()
+
+
+def dict2namespace(config):
+    namespace = argparse.Namespace()
+    for key, value in config.items():
+        if isinstance(value, dict):
+            new_value = dict2namespace(value)
+        else:
+            new_value = value
+        setattr(namespace, key, new_value)
+    return namespace
+
+
+def batch_mul(a, b):
+  return jax.vmap(lambda a, b: a * b)(a, b)
+
+
 '''
 helper functions from SDE
 '''
 
-
+'''
 def get_model_fn(model, train=False):
   """Create a function to give the output of the score-based model.
   Args:
@@ -165,3 +245,4 @@ def to_flattened_numpy(x):
 def from_flattened_numpy(x, shape):
   """Form a torch tensor with the given `shape` from a flattened numpy array `x`."""
   return torch.from_numpy(x.reshape(shape))
+'''

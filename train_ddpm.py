@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import Dataset, DataLoader
 
 from utils.sde_lib import VPSDE
-from models.ddpm import DDPM
+from models.toy_ddpm import DDPM
 
 
 def marginal_prob(x, t, beta_min=0.1, beta_max=20):

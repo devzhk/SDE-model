@@ -10,7 +10,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR
 
 from torch.utils.data import DataLoader
-from models.ddpm import Generator, DDPM
+from models.toy_ddpm import Generator, DDPM
 from utils.dataset import myOdeData
 
 

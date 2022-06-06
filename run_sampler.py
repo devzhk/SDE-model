@@ -7,7 +7,7 @@ from argparse import ArgumentParser
 
 import torch
 
-from models.ddpm import DDPM, Generator
+from models.toy_ddpm import DDPM, Generator
 
 from utils.ddpm_sampler import VPODE, OdeDiffusion
 from utils.helper import kde, scatter
