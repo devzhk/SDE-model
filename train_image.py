@@ -9,13 +9,15 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from torch.optim import Adam
-from torch.nn.parallel import DistributedDataParallel as DDP
-
 from tqdm import tqdm
 
 from models.unet3d import Unet3D
 from utils.dataset import ImageData
 from utils.helper import count_params
+
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 from utils.distributed import setup, cleanup
 from utils.data_helper import data_sampler
 
@@ -45,7 +47,7 @@ def eval(model, dataloader, criterion,
         test_err = 0
         for states in dataloader:
             states = states.to(device)
-            in_state = states[:, 0:1, :].repeat(1, 1, num_t, 1, 1)
+            in_state = states[:, :, 0:1].repeat(1, 1, num_t, 1, 1)
             # in_state = F.pad(in_state, (0, 0, 0, num_pad), 'constant', 0)
 
             pred = model(in_state)
@@ -116,7 +118,7 @@ def train(model, dataloader,
             optimizer.step()
             train_loss += loss.item()
         scheduler.step()
-        train_loss /= len(train_loader)
+        train_loss /= len(dataloader)
         pbar.set_description(
             (
                 f'Epoch :{e}, Loss: {train_loss}'
@@ -149,23 +151,15 @@ def train(model, dataloader,
 
 
 def run(train_loader, val_loader, test_loader,
-        config, device):
-    # set random seed
-    if 'seed' not in config:
-        seed = random.randint(0, 100000)
-        config['seed'] = seed
-    else:
-        seed = config['seed']
-    torch.manual_seed(seed)
-    random.seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
+        config, args, device):
     # create model
     model = Unet3D(dim=32).to(device)
     num_params = count_params(model)
     print(f'number of parameters: {num_params}')
     config['num_params'] = num_params
+
+    if args.distributed:
+        model = DDP(model, device_ids=[device])
     # define optimizer and criterion
     optimizer = Adam(model.parameters(), lr=config['lr'])
     scheduler = MultiStepLR(optimizer,
@@ -180,6 +174,45 @@ def run(train_loader, val_loader, test_loader,
           testloader=test_loader)
 
 
+def subprocess_fn(rank, args):
+    with open(args.config, 'r') as f:
+        config = yaml.load(f, yaml.FullLoader)
+
+    # parse configuration file
+    device = rank
+    batchsize = config['batchsize']
+    if args.log and rank == 0:
+        config['use_wandb'] = True
+    else:
+        config['use_wandb'] = False
+
+    config['seed'] = args.seed
+    seed = args.seed
+    torch.manual_seed(seed)
+    random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    # training set
+    num_sample = config['num_sample'] if 'num_sample' in config else None
+    trainset = ImageData(config['datapath'], config['t_step'], num_sample)
+    train_loader = DataLoader(trainset, batch_size=batchsize, shuffle=True,
+                              sampler=data_sampler(trainset,
+                                                   shuffle=True,
+                                                   distributed=args.distributed))
+    # validation set
+    # num_val_data = config['num_val_data'] if 'num_val_data' in config else None
+    # valset = ImageData(config['val_datapath'], config['t_step'], num_val_data)
+    # val_loader = DataLoader(valset, batch_size=batchsize, shuffle=True)
+    # test set
+    testset = ImageData(config['test_datapath'], config['t_step'])
+    test_loader = DataLoader(testset, batch_size=batchsize, shuffle=True,
+                             sampler=data_sampler(testset,
+                                                  shuffle=True,
+                                                  distributed=args.distributed))
+
+    for i in range(args.repeat):
+        run(train_loader, test_loader, test_loader, config, args, device)
+    print(f'{args.repeat} runs done!')
 
 
 if __name__ == '__main__':
@@ -188,32 +221,13 @@ if __name__ == '__main__':
     parser.add_argument('--log', action='store_true', help='turn on the wandb')
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--seed', type=int, default=None)
+    parser.add_argument('--num_gpus', type=int, default=1)
     args = parser.parse_args()
+    args.distributed = args.num_gpus > 1
 
-    with open(args.config, 'r') as f:
-        config = yaml.load(f, yaml.FullLoader)
-
-    # parse configuration file
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    batchsize = config['batchsize']
-    if args.log:
-        config['use_wandb'] = True
+    if args.seed is None:
+        args.seed = random.randint(0, 100000)
+    if args.distributed:
+        mp.spawn(subprocess_fn, args=(args,), nprocs=args.num_gpus)
     else:
-        config['use_wandb'] = False
-    if args.seed:
-        config['seed'] = args.seed
-    # training set
-    num_sample = config['num_sample'] if 'num_sample' in config else None
-    trainset = ImageData(config['datapath'], config['t_step'], num_sample)
-    train_loader = DataLoader(trainset, batch_size=batchsize, shuffle=True)
-    # validation set
-    # num_val_data = config['num_val_data'] if 'num_val_data' in config else None
-    # valset = ImageData(config['val_datapath'], config['t_step'], num_val_data)
-    # val_loader = DataLoader(valset, batch_size=batchsize, shuffle=True)
-    # test set
-    testset = ImageData(config['test_datapath'], config['t_step'])
-    test_loader = DataLoader(testset, batch_size=batchsize, shuffle=True)
-
-    for i in range(args.repeat):
-        run(train_loader, test_loader, test_loader, config, device)
-    print(f'{args.repeat} runs done!')
+        subprocess_fn(0, args)

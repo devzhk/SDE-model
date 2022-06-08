@@ -8,7 +8,9 @@ def convert(args):
     t_step = args.t_step
     num_t = (t_dim - 1) // t_step
     raw_data = torch.load(datapath)
+    print(f'original data shape: {raw_data.shape}')
     sub_data = raw_data[:, 0::t_step].clone()
+    print(f'subsampled data shape: {sub_data.shape}')
     save_path = datapath.replace('.pt', f'_t{num_t + 1}.pt')
     torch.save(sub_data, save_path)
 

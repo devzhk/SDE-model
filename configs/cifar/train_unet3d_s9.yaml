@@ -1,6 +1,5 @@
 # training data
-datapath: data/cifar10/ode_data_train_t9.pt
-num_sample: 50000
+datapath: data/cifar10/ode_data_train10k_t9.pt
 t_dim: 9
 t_step: 1
 epsilon: 0.00001
@@ -14,14 +13,14 @@ test_datapath: data/cifar10/ode_data_test_t9.pt
 # training
 num_epoch: 1000
 batchsize: 32
-lr: 0.002
-milestone: [100, 200, 300, 400, 500]
+lr: 0.001
+milestone: [100, 300, 500, 700, 900]
 num_pad: 0
 
 # log
-logname: cifar-unet3d-50k
-save_step: 200
-use_wandb: True
+logname: cifar-unet3d-10k
+save_step: 50
+use_wandb: False
 
 # if using wandb, specify the following
 entity: hzzheng
