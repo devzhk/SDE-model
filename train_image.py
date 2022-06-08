@@ -2,19 +2,22 @@ import math
 import os
 import random
 from argparse import ArgumentParser
+import yaml
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import yaml
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
+from torch.optim import Adam
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 from tqdm import tqdm
 
 from models.unet3d import Unet3D
-from utils.dataset import myOdeData, get_init
-from utils.helper import kde, count_params
-from utils.optim import Adam
+from utils.dataset import ImageData
+from utils.helper import count_params
+from utils.distributed import setup, cleanup
+from utils.data_helper import data_sampler
 
 try:
     import wandb
@@ -34,18 +37,17 @@ def eval(model, dataloader, criterion,
     save_img_dir = f'{base_dir}/figs'
     os.makedirs(save_img_dir, exist_ok=True)
 
-    t0, t1 = 1., config['epsilon']
-    ts = torch.linspace(t0, t1, num_t)
+    # t0, t1 = 1., config['epsilon']
     model.eval()
     pred_list = []
     truth_list = []
     with torch.no_grad():
         test_err = 0
         for states in dataloader:
-            ini_state = states[:, 0:1, :].repeat(1, num_t, 1)
-            in_state = get_init(ini_state, ts).to(device)
-            in_state = F.pad(in_state, (0, 0, 0, num_pad), 'constant', 0)
             states = states.to(device)
+            in_state = states[:, 0:1, :].repeat(1, 1, num_t, 1, 1)
+            # in_state = F.pad(in_state, (0, 0, 0, num_pad), 'constant', 0)
+
             pred = model(in_state)
             if num_pad > 0:
                 pred = pred[:, :-num_pad, :]
@@ -62,9 +64,6 @@ def eval(model, dataloader, criterion,
 
     err_T = criterion(final_pred[:, -1, :], final_states[:, -1, :])
     print(f'MSE at time 0: {err_T}')
-    if plot:
-        kde(final_pred[:, -1, :], save_file=f'{save_img_dir}/test_pred.png', dim=2)
-        kde(final_states[:, -1, :], save_file=f'{save_img_dir}/test_truth.png', dim=2)
     return err_T
 
 
@@ -97,17 +96,15 @@ def train(model, dataloader,
     save_ckpt_dir = f'{base_dir}/ckpts'
     os.makedirs(save_ckpt_dir, exist_ok=True)
 
-    t0, t1 = 1., config['epsilon']
-    ts = torch.linspace(t0, t1, num_t)
+    # t0, t1 = 1., config['epsilon']
     model.train()
     pbar = tqdm(list(range(config['num_epoch'])), dynamic_ncols=True)
     for e in pbar:
         train_loss = 0
         for states in dataloader:
-            ini_state = states[:, 0:1, :].repeat(1, num_t, 1)
-            in_state = get_init(ini_state, ts).to(device)
-            in_state = F.pad(in_state, (0, 0, 0, num_pad), 'constant', 0)
             states = states.to(device)
+            in_state = states[:, :, 0:1].repeat(1, 1, num_t, 1, 1)
+            # in_state = F.pad(in_state, (0, 0, 0, num_pad), 'constant', 0)
 
             pred = model(in_state)
             if num_pad > 0:
@@ -130,20 +127,18 @@ def train(model, dataloader,
         }
 
         if e % save_step == 0:
-            kde(pred[:, -1, :], save_file=f'{save_img_dir}/train_{e}_pred.png', dim=2)
-            kde(states[:, -1, :], save_file=f'{save_img_dir}/train_{e}_truth.png', dim=2)
             torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_{e}.pt')
             # eval on validation set
             if valloader:
                 print('start evaluating on validation set...')
                 val_err = eval(model, valloader, criterion,
-                               device, config)
+                               device, config, True)
                 log_state['val MSE'] = val_err
         if use_wandb and wandb:
             wandb.log(log_state)
     torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_final.pt')
     # test
-    test_err = eval(model, testloader, criterion, device, config, plot=True)
+    test_err = eval(model, testloader, criterion, device, config)
     if use_wandb and wandb:
         wandb.log({
             'test MSE': test_err
@@ -156,12 +151,16 @@ def train(model, dataloader,
 def run(train_loader, val_loader, test_loader,
         config, device):
     # set random seed
-    seed = random.randint(0, 100000)
+    if 'seed' not in config:
+        seed = random.randint(0, 100000)
+        config['seed'] = seed
+    else:
+        seed = config['seed']
     torch.manual_seed(seed)
     random.seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-    config['seed'] = seed
+
     # create model
     model = Unet3D(dim=32).to(device)
     num_params = count_params(model)
@@ -181,11 +180,14 @@ def run(train_loader, val_loader, test_loader,
           testloader=test_loader)
 
 
+
+
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
-    parser.add_argument('--config', type=str, default='configs/gaussian/train_2d-s9.yaml', help='configuration file')
+    parser.add_argument('--config', type=str, default='configs/cifar/train_unet3d_s9.yaml', help='configuration file')
     parser.add_argument('--log', action='store_true', help='turn on the wandb')
     parser.add_argument('--repeat', type=int, default=1)
+    parser.add_argument('--seed', type=int, default=None)
     args = parser.parse_args()
 
     with open(args.config, 'r') as f:
@@ -194,21 +196,22 @@ if __name__ == '__main__':
     # parse configuration file
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     batchsize = config['batchsize']
-    dimension = config['dimension']
     if args.log:
         config['use_wandb'] = True
     else:
         config['use_wandb'] = False
+    if args.seed:
+        config['seed'] = args.seed
     # training set
     num_sample = config['num_sample'] if 'num_sample' in config else None
-    trainset = myOdeData(config['datapath'], config['t_step'], num_sample)
+    trainset = ImageData(config['datapath'], config['t_step'], num_sample)
     train_loader = DataLoader(trainset, batch_size=batchsize, shuffle=True)
     # validation set
-    num_val_data = config['num_val_data'] if 'num_val_data' in config else None
-    valset = myOdeData(config['val_datapath'], config['t_step'], num_val_data)
-    val_loader = DataLoader(valset, batch_size=batchsize, shuffle=True)
+    # num_val_data = config['num_val_data'] if 'num_val_data' in config else None
+    # valset = ImageData(config['val_datapath'], config['t_step'], num_val_data)
+    # val_loader = DataLoader(valset, batch_size=batchsize, shuffle=True)
     # test set
-    testset = myOdeData(config['test_datapath'], config['t_step'])
+    testset = ImageData(config['test_datapath'], config['t_step'])
     test_loader = DataLoader(testset, batch_size=batchsize, shuffle=True)
 
     for i in range(args.repeat):

@@ -27,3 +27,25 @@ class myOdeData(Dataset):
     def __len__(self):
         return self.data.shape[0]
 
+
+class ImageData(Dataset):
+    def __init__(self, datapath, t_step, num_sample=None):
+        super(ImageData, self).__init__()
+        raw_data = torch.load(datapath)
+        # N, T, C, H, W
+        if num_sample is None:
+            self.data = raw_data[:, 0::t_step]
+        else:
+            self.data = raw_data[:num_sample, 0::t_step]
+        self.num_sample = self.data.shape[0]
+        # N, C, T, H, W
+
+
+
+    def __getitem__(self, idx):
+        return self.data[idx].permute(1, 0, 2, 3)
+
+    def __len__(self):
+        return self.num_sample
+
+

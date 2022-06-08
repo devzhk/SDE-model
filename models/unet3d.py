@@ -368,7 +368,6 @@ class Unet3D(nn.Module):
             channels=3,
             attn_heads=8,
             attn_dim_head=32,
-            use_bert_text_cond=False,
             init_dim=None,
             init_kernel_size=7,
             use_sparse_linear_attn=True,
@@ -406,6 +405,7 @@ class Unet3D(nn.Module):
         in_out = list(zip(dims[:-1], dims[1:]))
 
         # time conditioning
+        self.has_cond = exists(cond_dim)
 
         time_dim = dim * 4
         self.time_mlp = nn.Sequential(
@@ -413,16 +413,7 @@ class Unet3D(nn.Module):
             nn.Linear(dim, time_dim),
             nn.GELU(),
             nn.Linear(time_dim, time_dim)
-        )
-
-        # text conditioning
-
-        self.has_cond = exists(cond_dim) or use_bert_text_cond
-        cond_dim = 768 if use_bert_text_cond else cond_dim
-
-        self.null_cond_emb = nn.Parameter(torch.randn(1, cond_dim)) if self.has_cond else None
-
-        cond_dim = time_dim + int(cond_dim or 0)
+        ) if self.has_cond else None
 
         # layers
 
@@ -494,7 +485,7 @@ class Unet3D(nn.Module):
     def forward(
             self,
             x,
-            time,
+            time=0.0,
             cond=None,
             null_cond_prob=0.,
             focus_present_mask=None,
