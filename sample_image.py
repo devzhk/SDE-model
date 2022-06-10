@@ -220,7 +220,6 @@ class OdeDiffusion(torch.nn.Module):
 
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser(description=globals()['__doc__'])
     parser.add_argument('--config', type=str, default='configs/cifar/ddpm.yaml', help='Path to the config file')
     parser.add_argument('--exp', type=str, default='exp/cifar_sample', help='Path for saving running related data.')
@@ -228,7 +227,7 @@ if __name__ == '__main__':
     parser.add_argument('--score_type', type=str, default='score_sde', help='[guided_diffusion, score_sde]')
     parser.add_argument('--step_size', type=float, default=1e-3, help='step size for ODE Euler method')
     parser.add_argument('--seed', type=int, default=12301, help='Random seed')
-    parser.add_argument('--num_samples', type=int, default=100000, help='Number of samples')
+    parser.add_argument('--num_samples', type=int, default=28000, help='Number of samples')
     parser.add_argument('--batch_size', type=int, default=500, help='batch size')
     parser.add_argument('--t_size', type=int, default=33, help='number of states in ode to save')
     parser.add_argument('--gpu_ids', type=str, default='0')
@@ -262,7 +261,7 @@ if __name__ == '__main__':
 
     torch.backends.cudnn.benchmark = True
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_ids
+    # os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_ids
 
     ngpus = torch.cuda.device_count()
     print(f'ngpus: {ngpus}')
