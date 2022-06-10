@@ -1,19 +1,20 @@
 import argparse
 import os
+import psutil
 import random
 import time
 import numpy as np
 import yaml
 from tqdm import tqdm
+import h5py
+
 import torch
 from torch.optim import Adam
-import torchvision.transforms as transforms
 import torchvision.utils as tvu
 
 
 from torchdiffeq import odeint_adjoint
 
-from score_sde.losses import get_optimizer
 from score_sde.models import utils as mutils
 from score_sde.models.ema import ExponentialMovingAverage
 from score_sde import sde_lib
@@ -229,7 +230,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=12301, help='Random seed')
     parser.add_argument('--num_samples', type=int, default=100000, help='Number of samples')
     parser.add_argument('--batch_size', type=int, default=500, help='batch size')
-    parser.add_argument('--t_size', type=int, default=65, help='number of states in ode to save')
+    parser.add_argument('--t_size', type=int, default=33, help='number of states in ode to save')
     parser.add_argument('--gpu_ids', type=str, default='0')
     args = parser.parse_args()
 
@@ -247,6 +248,7 @@ if __name__ == '__main__':
     args.log_dir = log_dir
     logger = Logger(file_name=f'{log_dir}/log.txt', file_mode="w+", should_flush=True)
 
+    data_save_path = f'{args.log_dir}/ode_data_sd{args.seed}.h5'
     # add device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     new_config.device = device
@@ -275,16 +277,18 @@ if __name__ == '__main__':
 
     ode_diffusion = OdeDiffusion(args, new_config, device=new_config.device, data_parallel=True)
 
-    all_images = []
-    for counter in range(n_batches):
-        images_list = ode_diffusion.uncond_sample(batch_size, bs_id=counter)
-        all_images.append(images_list)
-
-        if counter % 10 == 0:
-            print(f'finished {counter} batches')
-
-    data = torch.cat(all_images, dim=0)
-
-    torch.save(data, f'{args.log_dir}/ode_data_sd{args.seed}.pt')
+    with h5py.File(data_save_path, 'a') as f:
+        dset = f.create_dataset(f'data_t{args.t_size}',
+                                (batch_size, args.t_size, 3, 32, 32),
+                                maxshape=(None, args.t_size, 3, 32, 32))
+        for i in tqdm(range(n_batches)):
+            images_batch = ode_diffusion.uncond_sample(batch_size, bs_id=i)
+            if i == 0:
+                dset[:] = images_batch.cpu().numpy()
+            else:
+                dset.resize(size=(i + 1) * batch_size, axis=0)
+                dset[-batch_size:] = images_batch.cpu().numpy()
+            ram_usage = psutil.Process().memory_info().rss / (1024 * 1024)
+            print(f'Memory usage: {ram_usage} MB.')
 
     logger.close()
