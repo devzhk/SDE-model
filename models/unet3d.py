@@ -362,6 +362,7 @@ class Unet3D(nn.Module):
     def __init__(
             self,
             dim,
+            no_skipped=0,
             cond_dim=None,
             out_dim=None,
             dim_mults=(1, 2, 4, 8),
@@ -369,14 +370,14 @@ class Unet3D(nn.Module):
             attn_heads=8,
             attn_dim_head=32,
             init_dim=None,
-            init_kernel_size=7,
+            init_kernel_size=3,
             use_sparse_linear_attn=True,
             block_type='resnet',
             resnet_groups=8
     ):
         super().__init__()
         self.channels = channels
-
+        self.no_skipped = no_skipped
         # temporal attention and its relative positional encoding
 
         rotary_emb = RotaryEmbedding(min(32, attn_dim_head))
@@ -453,9 +454,10 @@ class Unet3D(nn.Module):
 
         for ind, (dim_in, dim_out) in enumerate(reversed(in_out[1:])):
             is_last = ind >= (num_resolutions - 1)
+            factor = 2 if ind < (num_resolutions - no_skipped) else 1
 
             self.ups.append(nn.ModuleList([
-                block_klass_cond(dim_out * 2, dim_in),
+                block_klass_cond(dim_out * factor, dim_in),
                 block_klass_cond(dim_in, dim_in),
                 Residual(PreNorm(dim_in, SpatialLinearAttention(dim_in,
                                                                 heads=attn_heads))) if use_sparse_linear_attn else nn.Identity(),
@@ -515,12 +517,13 @@ class Unet3D(nn.Module):
 
         h = []
 
-        for block1, block2, spatial_attn, temporal_attn, downsample in self.downs:
+        for i, (block1, block2, spatial_attn, temporal_attn, downsample) in enumerate(self.downs):
             x = block1(x, t)
             x = block2(x, t)
             x = spatial_attn(x)
             x = temporal_attn(x, pos_bias=time_rel_pos_bias, focus_present_mask=focus_present_mask)
-            h.append(x)
+            if i >= self.no_skipped:
+                h.append(x)
             x = downsample(x)
 
         x = self.mid_block1(x, t)
@@ -528,8 +531,9 @@ class Unet3D(nn.Module):
         x = self.mid_temporal_attn(x, pos_bias=time_rel_pos_bias, focus_present_mask=focus_present_mask)
         x = self.mid_block2(x, t)
 
-        for block1, block2, spatial_attn, temporal_attn, upsample in self.ups:
-            x = torch.cat((x, h.pop()), dim=1)
+        for i, (block1, block2, spatial_attn, temporal_attn, upsample) in enumerate(self.ups):
+            if h:
+                x = torch.cat((x, h.pop()), dim=1)
             x = block1(x, t)
             x = block2(x, t)
             x = spatial_attn(x)

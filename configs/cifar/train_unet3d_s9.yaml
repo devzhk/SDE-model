@@ -1,7 +1,8 @@
 # training data
 datapath: data/cifar10/ode_data_train_t9.pt
+num_samples: 5000
 t_dim: 9
-t_step: 1
+t_step: 4
 epsilon: 0.00001
 
 # validation data
@@ -17,11 +18,11 @@ lr: 0.0005
 milestone: [100, 300, 500, 700]
 num_pad: 0
 
-# log
-logname: cifar-unet3d-10k
+# log, FP -> fully present, NS-> no skipped connection in the 1st layer.
+logname: cifar-unet3d-5k-CO-NS
 save_step: 50
 
 # if using wandb, specify the following
 entity: hzzheng
 project: Diffusion-CIFAR10
-group: unet3d-s9-100k
+group: unet3d-s9-5k-CO-NS
