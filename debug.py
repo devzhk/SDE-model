@@ -6,7 +6,6 @@ import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
 
-import math
 from models.layers import ResnetBlockDDPM, BBlock, Upsample, Downsample, TimeConv
 from utils.distributed import setup, cleanup
 
@@ -49,9 +48,39 @@ def test_sample():
 
 # test FNO block
 def test_fno(rank, args):
+    # setup
     if args.distributed:
+        setup(rank, args.num_gpus, port='8902')
+    print(f'Running on rank: {rank}')
+    torch.manual_seed(0)
+    torch.cuda.manual_seed_all(0)
+    B, C, T, H, W = 4, 4, 5, 8, 8
+    xs = torch.randn((B, C, T, H, W), device=rank)
+    if args.distributed:
+        ys = xs[rank * 2: (rank+1) * 2]
+    else:
+        ys = xs
+
+    act = nn.SiLU()
+    block = TimeConv(in_ch=C, out_ch=C, modes=2, act=act).to(rank)
+    if args.distributed:
+        block = DDP(block, device_ids=[rank], broadcast_buffers=False)
+        model = block.module
+    else:
+        model = block
 
 
+    # print(f'Input {ys[0, 1, 2]}')
+    pred = block(ys)
+    loss = torch.mean(pred)
+    loss.backward()
+
+    print(model.t_conv.weights1.grad[0, 1])
+    print(model.nin.W.grad[0, 1])
+    print(model.nin.b.grad[0])
+    # print(f'Output {pred[0, 1, 2]}')
+    if args.distributed:
+        cleanup()
 
 
 if __name__ == '__main__':
@@ -62,10 +91,11 @@ if __name__ == '__main__':
 
     subprocess = test_fno
 
+    device = 0 if torch.cuda.is_available() else 'cpu'
     if args.distributed:
         mp.spawn(subprocess, args=(args, ), nprocs=args.num_gpus)
     else:
-        subprocess(0, args)
+        subprocess(device, args)
     # test_bblock()
     # test_sample()
 

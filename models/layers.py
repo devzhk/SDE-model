@@ -340,8 +340,8 @@ class BBlock(nn.Module):
 
 
 def compl_mul1d(a, b):
-    # (batch, in_channel, x ), (in_channel, out_channel, x) -> (batch, out_channel, x)
-    return torch.einsum("bix,iox->box", a, b)
+    # (B, in_ch, M, H, W), (in_ch, out_ch, x) -> (batch, out_channel, M, H, W)
+    return torch.einsum("bimhw,iom->bomhw", a, b)
 
 
 class SpectralConv1d(nn.Module):
@@ -367,11 +367,10 @@ class SpectralConv1d(nn.Module):
         x_ft = torch.fft.rfftn(x, dim=[2])
 
         # Multiply relevant Fourier modes
-        out_ft = torch.zeros(B, self.out_ch, x.size(-1)//2 + 1, device=x.device, dtype=torch.cfloat)
-        out_ft[:, :, :self.modes1] = compl_mul1d(x_ft[:, :, :self.modes1], torch.view_as_complex(self.weights1))
+        out_ft = compl_mul1d(x_ft[:, :, :self.modes1], torch.view_as_complex(self.weights1))
 
         # Return to physical space
-        x = torch.fft.irfftn(out_ft, s=[x.size(-1)], dim=[2])
+        x = torch.fft.irfftn(out_ft, s=[T], dim=[2])
         return x
 
 

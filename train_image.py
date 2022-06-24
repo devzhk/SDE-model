@@ -253,6 +253,8 @@ def subprocess_fn(rank, args):
     for i in range(args.repeat):
         run(train_loader, test_loader, test_loader, config, args, device)
     print(f'{args.repeat} runs done!')
+    if args.distributed:
+        cleanup()
 
 
 if __name__ == '__main__':
