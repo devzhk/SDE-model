@@ -20,6 +20,7 @@ class TUnet(nn.Module):
     super(TUnet, self).__init__()
     self.act = act = get_act(config)
     self.nf = nf = config.model.nf
+    self.num_modes = num_modes = config.model.num_modes
     ch_mult = config.model.ch_mult
     self.num_res_blocks = num_res_blocks = config.model.num_res_blocks
     self.attn_resolutions = attn_resolutions = config.model.attn_resolutions
@@ -55,6 +56,7 @@ class TUnet(nn.Module):
         in_ch = out_ch
         if all_resolutions[i_level] in attn_resolutions:
           modules.append(AttnBlock(channels=in_ch))
+        modules.append(time_conv(in_ch=in_ch, out_ch=out_ch, modes=num_modes, act=act))
         hs_c.append(in_ch)
       if i_level != num_resolutions - 1:
         modules.append(Downsample(channels=in_ch, with_conv=resamp_with_conv))
@@ -70,9 +72,11 @@ class TUnet(nn.Module):
       for i_block in range(num_res_blocks + 1):
         out_ch = nf * ch_mult[i_level]
         modules.append(ResnetBlock(in_ch=in_ch + hs_c.pop(), out_ch=out_ch))
+        modules.append(time_conv(in_ch=out_ch, out_ch=out_ch, modes=num_modes, act=act))
         in_ch = out_ch
       if all_resolutions[i_level] in attn_resolutions:
         modules.append(AttnBlock(channels=in_ch))
+
       if i_level != 0:
         modules.append(Upsample(channels=in_ch, with_conv=resamp_with_conv))
 
@@ -113,6 +117,8 @@ class TUnet(nn.Module):
         if h.shape[-1] in self.attn_resolutions:
           h = modules[m_idx](h)
           m_idx += 1
+        h = modules[m_idx](h)
+        m_idx += 1
         hs.append(h)
       if i_level != self.num_resolutions - 1:
         hs.append(modules[m_idx](hs[-1]))
@@ -130,6 +136,8 @@ class TUnet(nn.Module):
     for i_level in reversed(range(self.num_resolutions)):
       for i_block in range(self.num_res_blocks + 1):
         h = modules[m_idx](torch.cat([h, hs.pop()], dim=1), temb)
+        m_idx += 1
+        h = modules[m_idx](h)
         m_idx += 1
       if h.shape[-1] in self.attn_resolutions:
         h = modules[m_idx](h)

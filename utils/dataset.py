@@ -51,22 +51,32 @@ class ImageData(Dataset):
 
 
 class H5Data(Dataset):
-    def __init__(self, data_dir, t_step, num_sample=10000):
+    def __init__(self, data_dir, t_step, num_sample=10000, index=[0,]):
         super(H5Data, self).__init__()
         self.data_dir = data_dir
         self.t_step = t_step
         if num_sample > 28000:
-            raise NotImplementedError('Multi File not implemented')
-        else:
-            datapath = os.path.join(data_dir, 'ode_data_sd0.h5')
-            f = h5py.File(datapath, 'r')
-            self.dset = f['data_t33']
+            trunk_list = []
+            for idx in index:
+                datapath = os.path.join(data_dir, f'ode_data_sd{idx}.h5')
+                with h5py.File(datapath, 'r') as f:
+                    dset = f['data_t33'][:, ::self.t_step]
+                dset = torch.from_numpy(dset).to(torch.float32)
+                trunk_list.append(dset)
+            self.dset = torch.cat(trunk_list, dim=0).permute(0, 2, 1, 3, 4)
             self.datasize = self.dset.shape[0]
+        else:
+            idx = index[0]
+            datapath = os.path.join(data_dir, f'ode_data_sd{idx}.h5')
+            with h5py.File(datapath, 'r') as f:
+                dset = f['data_t33'][0:num_sample, ::self.t_step]
+            self.dset = torch.from_numpy(dset).to(torch.float32).permute(0, 2, 1, 3, 4)
+            self.datasize = num_sample
 
     def __getitem__(self, item):
-        raw_imgs = self.dset[item]
-        image = raw_imgs[::self.t_step].permute(1, 0, 2, 3)
-        return torch.from_numpy(image).to(torch.float32)
+        img = self.dset[item]
+        # tensor_imgs = torch.from_numpy(raw_imgs[::self.t_step]).to(torch.float32).permute(1, 0, 2, 3)
+        return img
 
     def __len__(self):
         return self.datasize

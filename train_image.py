@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 from models.unet3d import Unet3D
 from models.tunet import TUnet
-from utils.data_helper import data_sampler
+from utils.data_helper import data_sampler, sample_data
 from utils.dataset import ImageData, H5Data
 from utils.distributed import setup, cleanup, reduce_loss_dict, all_reduce_mean
 from utils.helper import count_params, dict2namespace
@@ -29,17 +29,17 @@ except ImportError:
 
 def eval(model, dataloader, criterion,
          device, config, plot=False):
-    t_dim = config['t_dim']
-    t_step = config['t_step']
+    t_dim = config['data']['t_dim']
+    t_step = config['data']['t_step']
     num_t = math.ceil(t_dim / t_step)
-    num_pad = config['num_pad'] if 'num_pad' in config else 5
-    logname = config['logname']
+    logname = config['log']['logname']
     # prepare log dir
     base_dir = f'exp/{logname}/'
     save_img_dir = f'{base_dir}/figs'
     os.makedirs(save_img_dir, exist_ok=True)
 
-    # t0, t1 = 1., config['epsilon']
+    t0, t1 = 1., config['data']['epsilon']
+    timesteps = torch.linspace(t0, t1, num_t, device=device)
     model.eval()
     pred_list = []
     truth_list = []
@@ -48,12 +48,9 @@ def eval(model, dataloader, criterion,
         test_err = 0
         for states in dataloader:
             states = states.to(device)
-            in_state = states[:, :, 0:1].repeat(1, 1, num_t, 1, 1)
-            # in_state = F.pad(in_state, (0, 0, 0, num_pad), 'constant', 0)
+            in_state = states[:,:,0]
 
-            pred = model(in_state)
-            if num_pad > 0:
-                pred = pred[:, :-num_pad, :]
+            pred = model(in_state, timesteps)
             pred_list.append(pred[:, :, -1])
             truth_list.append(states[:, :, -1])
             loss = criterion(pred, states)
@@ -66,14 +63,10 @@ def eval(model, dataloader, criterion,
     if device == 0:
         print(f'MSE of the whole trajectory: {test_err}')
         print(f'MSE at time 0: {err_T}')
-        save_image(pred[:, :, -1],
-                   f'{save_img_dir}/pred_test.png',
-                   normalize=True,
-                   value_range=(-1, 1))
-        save_image(states[:, :, -1],
-                   f'{save_img_dir}/truth_test.png',
-                   normalize=True,
-                   value_range=(-1, 1))
+        save_image(pred[:, :, -1] * 0.5 + 0.5,
+                   f'{save_img_dir}/pred_test.png')
+        save_image(states[:, :, -1] * 0.5 + 0.5,
+                   f'{save_img_dir}/truth_test.png')
     return err_T
 
 
@@ -83,17 +76,16 @@ def train(model, dataloader,
           device, config, args,
           valloader=None,
           testloader=None):
-    t_dim = config['t_dim']
-    t_step = config['t_step']
+    t_dim = config['data']['t_dim']
+    t_step = config['data']['t_step']
     num_t = math.ceil(t_dim / t_step)
-    logname = config['logname']
-    num_pad = config['num_pad'] if 'num_pad' in config else 5
-    save_step = config['save_step']
+    logname = config['log']['logname']
+    save_step = config['log']['save_step']
     use_wandb = config['use_wandb'] if 'use_wandb' in config else False
     if use_wandb and wandb:
-        run = wandb.init(entity=config['entity'],
-                         project=config['project'],
-                         group=config['group'],
+        run = wandb.init(entity=config['log']['entity'],
+                         project=config['log']['project'],
+                         group=config['log']['group'],
                          config=config,
                          reinit=True,
                          settings=wandb.Settings(start_method='fork'))
@@ -106,33 +98,34 @@ def train(model, dataloader,
     save_ckpt_dir = f'{base_dir}/ckpts'
     os.makedirs(save_ckpt_dir, exist_ok=True)
 
-    # t0, t1 = 1., config['epsilon']
+    t0, t1 = 1., config['data']['epsilon']
+    timesteps = torch.linspace(t0, t1, num_t, device=device)
+    if args.distributed:
+        param = model.module
+    else:
+        param = model
     model.train()
-    pbar = tqdm(list(range(config['num_epoch'])), dynamic_ncols=True)
+    pbar = tqdm(range(config['training']['n_iters']), dynamic_ncols=True)
+
+    log_dict = {}
+    dataloader = sample_data(dataloader)
 
     for e in pbar:
-        log_dict = {
-            'train_loss': 0.0,
-            'test_error': 0.0
-        }
-        for states in dataloader:
-            states = states.to(device)
-            in_state = states[:, :, 0:1].repeat(1, 1, num_t, 1, 1)
-            # in_state = F.pad(in_state, (0, 0, 0, num_pad), 'constant', 0)
+        states = next(dataloader)
+        states = states.to(device)
+        in_state = states[:, :, 0]
 
-            pred = model(in_state, )
-            if num_pad > 0:
-                pred = pred[:, :-num_pad, :]
-            loss = criterion(pred, states)
-            # update model
-            model.zero_grad()
-            loss.backward()
-            optimizer.step()
-            log_dict['train_loss'] += loss
+        pred = model(in_state, timesteps)
+        loss = criterion(pred, states)
+        # update model
+        model.zero_grad()
+        loss.backward()
+        optimizer.step()
+        log_dict['train_loss'] = loss
         scheduler.step()
 
         reduced_log_dict = reduce_loss_dict(log_dict)
-        train_loss = reduced_log_dict['train_loss'].item() / len(dataloader)
+        train_loss = reduced_log_dict['train_loss'].item()
         if device == 0:
             pbar.set_description(
                 (
@@ -145,15 +138,13 @@ def train(model, dataloader,
 
         if e % save_step == 0:
             if device == 0:
-                save_image(pred[:, :, -1],
+                save_image(pred[:, :, -1] * 0.5 + 0.5,
                            f'{save_img_dir}/pred_{e}.png',
-                           normalize=True,
-                           value_range=(-1, 1))
-                save_image(states[:, :, -1],
+                           nrow=8)
+                save_image(states[:, :, -1] * 0.5 + 0.5,
                            f'{save_img_dir}/truth_{e}.png',
-                           normalize=True,
-                           value_range=(-1, 1))
-                torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_{e}.pt')
+                           nrow=8)
+                torch.save(param.state_dict(), f'{save_ckpt_dir}/solver-model_{e}.pt')
             # eval on validation set
             if valloader:
                 val_err = eval(model, valloader, criterion,
@@ -162,7 +153,7 @@ def train(model, dataloader,
                 log_state['val MSE'] = val_err_avg
         if use_wandb and wandb:
             wandb.log(log_state)
-    torch.save(model.state_dict(), f'{save_ckpt_dir}/solver-model_final.pt')
+    torch.save(param.state_dict(), f'{save_ckpt_dir}/solver-model_final.pt')
     # test
     test_err = eval(model, testloader, criterion, device, config)
     test_err_avg = all_reduce_mean(test_err).item()
@@ -184,7 +175,7 @@ def run(train_loader, val_loader, test_loader,
     # create model
     # model = Unet3D(dim=48, no_skipped=1).to(device)
     model_args = dict2namespace(config)
-    model = TUnet(model_args)
+    model = TUnet(model_args).to(device)
     num_params = count_params(model)
     print(f'number of parameters: {num_params}')
     config['num_params'] = num_params
@@ -192,9 +183,9 @@ def run(train_loader, val_loader, test_loader,
     if args.distributed:
         model = DDP(model, device_ids=[device], broadcast_buffers=False)
     # define optimizer and criterion
-    optimizer = Adam(model.parameters(), lr=config['lr'])
+    optimizer = Adam(model.parameters(), lr=config['optim']['lr'])
     scheduler = MultiStepLR(optimizer,
-                            milestones=config['milestone'],
+                            milestones=config['optim']['milestone'],
                             gamma=0.5)
     criterion = nn.MSELoss()
     train(model, train_loader,
@@ -215,7 +206,7 @@ def subprocess_fn(rank, args):
         config = yaml.load(f, yaml.FullLoader)
     # parse configuration file
     device = rank
-    batchsize = config['batchsize']
+    batchsize = config['training']['batchsize']
     if args.log and rank == 0:
         config['use_wandb'] = True
     else:
@@ -228,9 +219,11 @@ def subprocess_fn(rank, args):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
     # training set
-    num_sample = config['num_sample'] if 'num_sample' in config else None
+    num_sample = config['data']['num_sample'] if 'num_sample' in config['data'] else 10000
     # trainset = ImageData(config['datapath'], config['t_step'], num_sample)
-    trainset = H5Data(config['datapath'], config['t_step'], num_sample)
+    trainset = H5Data(config['data']['datapath'],
+                      config['data']['t_step'],
+                      num_sample, index=[0, 3])
     train_loader = DataLoader(trainset, batch_size=batchsize,
                               sampler=data_sampler(trainset,
                                                    shuffle=True,
@@ -241,7 +234,9 @@ def subprocess_fn(rank, args):
     # valset = ImageData(config['val_datapath'], config['t_step'], num_val_data)
     # val_loader = DataLoader(valset, batch_size=batchsize, shuffle=True)
     # test set
-    testset = ImageData(config['test_datapath'], config['t_step'])
+    testset = H5Data(config['data']['datapath'],
+                     config['data']['t_step'],
+                     num_sample=5000, index=[1])
     test_loader = DataLoader(testset, batch_size=batchsize,
                              sampler=data_sampler(testset,
                                                   shuffle=True,
@@ -257,7 +252,7 @@ def subprocess_fn(rank, args):
 
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
-    parser.add_argument('--config', type=str, default='configs/cifar/train_unet3d_s9.yaml', help='configuration file')
+    parser.add_argument('--config', type=str, default='configs/cifar/tunet.yaml', help='configuration file')
     parser.add_argument('--log', action='store_true', help='turn on the wandb')
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--seed', type=int, default=None)
