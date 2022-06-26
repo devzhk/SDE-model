@@ -1,3 +1,4 @@
+import math
 from functools import partial
 import numpy as np
 import string
@@ -5,6 +6,23 @@ import string
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
+
+
+def get_timestep_embedding(timesteps, embedding_dim, max_positions=10000):
+    # assert len(timesteps.shape) == 1  # and timesteps.dtype == tf.int32
+    half_dim = embedding_dim // 2
+    # magic number 10000 is from transformers
+    emb = math.log(max_positions) / (half_dim - 1)
+    # emb = math.log(2.) / (half_dim - 1)
+    emb = torch.exp(torch.arange(half_dim, dtype=torch.float32, device=timesteps.device) * -emb)
+    # emb = tf.range(num_embeddings, dtype=jnp.float32)[:, None] * emb[None, :]
+    # emb = tf.cast(timesteps, dtype=jnp.float32)[:, None] * emb[None, :]
+    emb = timesteps.float()[:, None] * emb[None, :]
+    emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=-1)
+    if embedding_dim % 2 == 1:  # zero pad
+        emb = F.pad(emb, (0, 1), mode='constant')
+    assert emb.shape == (timesteps.shape[0], embedding_dim)
+    return emb
 
 
 def variance_scaling(scale, mode, distribution,
@@ -203,9 +221,10 @@ class NIN(nn.Module):
 
     def forward(self, x):
         # x: (B, C, T, H, W)
-        x = x.permute(0, 2, 3, 4, 1)
-        y = contract_inner(x, self.W) + self.b
-        return y.permute(0, 4, 1, 2, 3)
+        y = torch.einsum('bcthw,co->bothw', x, self.W) + self.b[None, :, None, None, None]
+        if y.stride()[1] == 1:
+            y = y.contiguous()
+        return y
 
 
 class AttnBlock(nn.Module):
@@ -230,7 +249,7 @@ class AttnBlock(nn.Module):
         w = torch.reshape(w, (B, T, H, W, H * W))
         w = F.softmax(w, dim=-1)
         w = torch.reshape(w, (B, T, H, W, H, W))
-        h = torch.einsum('bhwij,bcij->bchw', w, v)
+        h = torch.einsum('bthwij,bctij->bcthw', w, v)
         h = self.NIN_3(h)
         return x + h
 

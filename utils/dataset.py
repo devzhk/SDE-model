@@ -1,3 +1,6 @@
+import os
+import h5py
+
 import torch
 from torch.utils.data import Dataset
 
@@ -40,8 +43,6 @@ class ImageData(Dataset):
         self.num_sample = self.data.shape[0]
         # N, C, T, H, W
 
-
-
     def __getitem__(self, idx):
         return self.data[idx].permute(1, 0, 2, 3)
 
@@ -49,3 +50,23 @@ class ImageData(Dataset):
         return self.num_sample
 
 
+class H5Data(Dataset):
+    def __init__(self, data_dir, t_step, num_sample=10000):
+        super(H5Data, self).__init__()
+        self.data_dir = data_dir
+        self.t_step = t_step
+        if num_sample > 28000:
+            raise NotImplementedError('Multi File not implemented')
+        else:
+            datapath = os.path.join(data_dir, 'ode_data_sd0.h5')
+            f = h5py.File(datapath, 'r')
+            self.dset = f['data_t33']
+            self.datasize = self.dset.shape[0]
+
+    def __getitem__(self, item):
+        raw_imgs = self.dset[item]
+        image = raw_imgs[::self.t_step].permute(1, 0, 2, 3)
+        return torch.from_numpy(image).to(torch.float32)
+
+    def __len__(self):
+        return self.datasize

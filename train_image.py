@@ -15,10 +15,11 @@ from torchvision.utils import save_image
 from tqdm import tqdm
 
 from models.unet3d import Unet3D
+from models.tunet import TUnet
 from utils.data_helper import data_sampler
-from utils.dataset import ImageData
+from utils.dataset import ImageData, H5Data
 from utils.distributed import setup, cleanup, reduce_loss_dict, all_reduce_mean
-from utils.helper import count_params
+from utils.helper import count_params, dict2namespace
 
 try:
     import wandb
@@ -114,18 +115,12 @@ def train(model, dataloader,
             'train_loss': 0.0,
             'test_error': 0.0
         }
-        if e < 20:
-            ratio = 1.
-        elif e < 200:
-            ratio = 10 / e
-        else:
-            ratio = 0.0
         for states in dataloader:
             states = states.to(device)
             in_state = states[:, :, 0:1].repeat(1, 1, num_t, 1, 1)
             # in_state = F.pad(in_state, (0, 0, 0, num_pad), 'constant', 0)
 
-            pred = model(in_state, prob_focus_present=ratio)
+            pred = model(in_state, )
             if num_pad > 0:
                 pred = pred[:, :-num_pad, :]
             loss = criterion(pred, states)
@@ -187,7 +182,9 @@ def train(model, dataloader,
 def run(train_loader, val_loader, test_loader,
         config, args, device):
     # create model
-    model = Unet3D(dim=48, no_skipped=1).to(device)
+    # model = Unet3D(dim=48, no_skipped=1).to(device)
+    model_args = dict2namespace(config)
+    model = TUnet(model_args)
     num_params = count_params(model)
     print(f'number of parameters: {num_params}')
     config['num_params'] = num_params
@@ -232,7 +229,8 @@ def subprocess_fn(rank, args):
         torch.cuda.manual_seed_all(seed)
     # training set
     num_sample = config['num_sample'] if 'num_sample' in config else None
-    trainset = ImageData(config['datapath'], config['t_step'], num_sample)
+    # trainset = ImageData(config['datapath'], config['t_step'], num_sample)
+    trainset = H5Data(config['datapath'], config['t_step'], num_sample)
     train_loader = DataLoader(trainset, batch_size=batchsize,
                               sampler=data_sampler(trainset,
                                                    shuffle=True,

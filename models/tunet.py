@@ -4,19 +4,20 @@ import functools
 
 from . import layers, normalization
 
+time_conv = layers.TimeConv
 bblock = layers.BBlock
 ResnetBlockDDPM = layers.ResnetBlockDDPM
 Upsample = layers.Upsample
 Downsample = layers.Downsample
-conv3x3 = layers.ddpm_conv3x3
+conv1x3x3 = layers.ddpm_conv1x3x3
 get_act = layers.get_act
 get_normalization = normalization.get_normalization
 default_initializer = layers.default_init
 
 
-class DDPM(nn.Module):
+class TUnet(nn.Module):
   def __init__(self, config):
-    super().__init__()
+    super(TUnet, self).__init__()
     self.act = act = get_act(config)
     self.nf = nf = config.model.nf
     ch_mult = config.model.ch_mult
@@ -29,13 +30,13 @@ class DDPM(nn.Module):
 
     AttnBlock = functools.partial(layers.AttnBlock)
     self.conditional = conditional = config.model.conditional
-    ResnetBlock = functools.partial(ResnetBlockDDPM, act=act, temb_dim=4 * nf, dropout=dropout)
+    ResnetBlock = functools.partial(ResnetBlockDDPM, act=act, temb_dim=nf, dropout=dropout)
     if conditional:
       # Condition on noise levels.
-      modules = [nn.Linear(nf, nf * 4)]
+      modules = [nn.Linear(nf, nf)]
       modules[0].weight.data = default_initializer()(modules[0].weight.data.shape)
       nn.init.zeros_(modules[0].bias)
-      modules.append(nn.Linear(nf * 4, nf * 4))
+      modules.append(nn.Linear(nf, nf))
       modules[1].weight.data = default_initializer()(modules[1].weight.data.shape)
       nn.init.zeros_(modules[1].bias)
 
@@ -77,10 +78,8 @@ class DDPM(nn.Module):
 
     assert not hs_c
     modules.append(nn.GroupNorm(num_channels=in_ch, num_groups=32, eps=1e-6))
-    modules.append(conv3x3(in_ch, channels, init_scale=0.))
+    modules.append(conv1x3x3(in_ch, channels, init_scale=0.))
     self.all_modules = nn.ModuleList(modules)
-
-    self.scale_by_sigma = config.model.scale_by_sigma
 
   def forward(self, x, labels):
     modules = self.all_modules
@@ -104,7 +103,7 @@ class DDPM(nn.Module):
       h = 2 * x - 1.
 
     # Downsampling block
-    hs = [modules[m_idx](h)]
+    hs = [modules[m_idx](h, temb)]
     m_idx += 1
     for i_level in range(self.num_resolutions):
       # Residual blocks for this resolution
