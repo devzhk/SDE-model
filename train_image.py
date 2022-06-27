@@ -223,7 +223,7 @@ def subprocess_fn(rank, args):
     # trainset = ImageData(config['datapath'], config['t_step'], num_sample)
     trainset = H5Data(config['data']['datapath'],
                       config['data']['t_step'],
-                      num_sample, index=[0, 3])
+                      num_sample, index=[0, 3, 4, 5])
     train_loader = DataLoader(trainset, batch_size=batchsize,
                               sampler=data_sampler(trainset,
                                                    shuffle=True,
