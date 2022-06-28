@@ -1,5 +1,5 @@
 import os
-
+from argparse import ArgumentParser
 
 fields = ['1pNPRspk0RyvI6c1jCaTknaL2GYDB1qOZ',  #0
           '16sSK7LNqzOZPux_IKhCcbhkqIxKKyl8t',  #1
@@ -42,9 +42,13 @@ fields = ['1pNPRspk0RyvI6c1jCaTknaL2GYDB1qOZ',  #0
           '1D82PQUy5MKxrxrVCCAzzql04OJRgJChT',  #39
           ]
 
-download_list = [25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+if __name__ == '__main__':
+    parser = ArgumentParser('Parser for downloading data')
+    parser.add_argument('--path2drive', type=str, default='/home/ec2-user/gdrive ')
+    # download_list = [25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+    download_list = list(range(39))
 
-for i in download_list:
-    os.system(f'/home/ec2-user/gdrive download {fields[i]}')
+    for i in download_list:
+        os.system(f'/home/ec2-user/gdrive download {fields[i]}')
 
 

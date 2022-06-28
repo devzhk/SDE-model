@@ -106,7 +106,7 @@ def train(model, dataloader,
         param = model
     model.train()
     pbar = tqdm(range(config['training']['n_iters']), dynamic_ncols=True)
-
+    use_time_conv = config['model']['time_conv']
     log_dict = {}
     dataloader = sample_data(dataloader)
 
@@ -116,7 +116,10 @@ def train(model, dataloader,
         in_state = states[:, :, 0]
 
         pred = model(in_state, timesteps)
-        loss = criterion(pred, states)
+        if use_time_conv:
+            loss = criterion(pred[:, :, -1], states[:, :, -1])
+        else:
+            loss = criterion(pred, states)
         # update model
         model.zero_grad()
         loss.backward()
@@ -187,7 +190,10 @@ def run(train_loader, val_loader, test_loader,
     scheduler = MultiStepLR(optimizer,
                             milestones=config['optim']['milestone'],
                             gamma=0.5)
-    criterion = nn.MSELoss()
+    if config['training']['loss'] == 'L1':
+        criterion = nn.L1Loss()
+    else:
+        criterion = nn.MSELoss()
     train(model, train_loader,
           criterion,
           optimizer, scheduler,
@@ -221,13 +227,19 @@ def subprocess_fn(rank, args):
     # training set
     num_sample = config['data']['num_sample'] if 'num_sample' in config['data'] else 10000
     # trainset = ImageData(config['datapath'], config['t_step'], num_sample)
+    idx_dict = {
+        0: [0, 1, 3, 4, 5, 6, 7, 8, 9],
+        1: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+        2: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
+        3: [30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
+    }
     trainset = H5Data(config['data']['datapath'],
                       config['data']['t_step'],
-                      num_sample, index=[0, 3, 4, 5])
+                      num_sample, index=idx_dict[rank])
     train_loader = DataLoader(trainset, batch_size=batchsize,
                               sampler=data_sampler(trainset,
                                                    shuffle=True,
-                                                   distributed=args.distributed),
+                                                   distributed=False),
                               drop_last=True)
     # validation set
     # num_val_data = config['num_val_data'] if 'num_val_data' in config else None
@@ -253,6 +265,7 @@ def subprocess_fn(rank, args):
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
     parser.add_argument('--config', type=str, default='configs/cifar/tunet.yaml', help='configuration file')
+    parser.add_argument('--ckpt', type=str, help='Which checkpoint to initialize the model')
     parser.add_argument('--log', action='store_true', help='turn on the wandb')
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--seed', type=int, default=None)

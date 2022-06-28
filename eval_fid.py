@@ -37,7 +37,7 @@ if __name__ == '__main__':
     parser = ArgumentParser('basic parser for evaluating FID score')
     parser.add_argument('--dataname', type=str, default='cifar10')
     parser.add_argument('--datasplit', type=str, default='train')
-    parser.add_argument('--config', type=str, default='configs/cifar/tunet.yaml')
+    parser.add_argument('--config', type=str, default='configs/cifar/tunet-kd.yaml')
     parser.add_argument('--ckpt', type=str, default='exp/cifar-tunet-112k/ckpts/solver-model_20000.pt')
     parser.add_argument('--logdir', type=str, default='log/default')
     parser.add_argument('--img_size', type=int, default=32)

@@ -9,7 +9,7 @@ data:
     num_sample: 112000
     epsilon: 0.00001
     t_dim: 33
-    t_step: 16
+    t_step: 32
 
 model:
     dropout: 0.0
@@ -23,7 +23,7 @@ model:
     attn_resolutions: [8, 16]  # (16,)
     resamp_with_conv: True
     conditional: True
-    time_conv: True
+    time_conv: False
     init_scale: 0.
     embedding_type: 'positional'
     fourier_scale: 16
@@ -31,14 +31,14 @@ model:
     num_modes: 2
 
 training:
-    n_iters: 250_000
-    batchsize: 40
+    n_iters: 50_000
+    batchsize: 48
     loss: L1
 
 optim:
     optimizer: 'Adam'
-    lr: 0.0004  # 2e-4
-    milestone: [50_000, 100_000, 150_000]
+    lr: 0.00004  # 2e-4
+    milestone: [20_000, 40_000]
     eps: 0.00000001  # 1e-8
     warmup: 5000
     grad_clip: 1.
