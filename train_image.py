@@ -2,6 +2,7 @@ import math
 import os
 import random
 from argparse import ArgumentParser
+import copy
 
 import torch
 import torch.multiprocessing as mp
@@ -14,8 +15,9 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from tqdm import tqdm
 
-from models.unet3d import Unet3D
+# from models.unet3d import Unet3D
 from models.tunet import TUnet
+from models.utils import interpolate_model, save_ckpt
 from utils.data_helper import data_sampler, sample_data
 from utils.dataset import ImageData, H5Data
 from utils.distributed import setup, cleanup, reduce_loss_dict, all_reduce_mean
@@ -70,7 +72,8 @@ def eval(model, dataloader, criterion,
     return err_T
 
 
-def train(model, dataloader,
+def train(model, model_ema,
+          dataloader,
           criterion,
           optimizer, scheduler,
           device, config, args,
@@ -78,6 +81,8 @@ def train(model, dataloader,
           testloader=None):
     t_dim = config['data']['t_dim']
     t_step = config['data']['t_step']
+    ema_decay = config['model']['ema_rate']
+    start_iter = config['training']['start_iter']
     num_t = math.ceil(t_dim / t_step)
     logname = config['log']['logname']
     save_step = config['log']['save_step']
@@ -91,7 +96,7 @@ def train(model, dataloader,
                          settings=wandb.Settings(start_method='fork'))
 
     # prepare log dir
-    base_dir = f'exp/{logname}/'
+    base_dir = f'exp/{logname}'
     save_img_dir = f'{base_dir}/figs'
     os.makedirs(save_img_dir, exist_ok=True)
 
@@ -100,10 +105,6 @@ def train(model, dataloader,
 
     t0, t1 = 1., config['data']['epsilon']
     timesteps = torch.linspace(t0, t1, num_t, device=device)
-    if args.distributed:
-        param = model.module
-    else:
-        param = model
     model.train()
     pbar = tqdm(range(config['training']['n_iters']), dynamic_ncols=True)
     use_time_conv = config['model']['time_conv']
@@ -138,7 +139,9 @@ def train(model, dataloader,
         log_state = {
             'train MSE': train_loss
         }
+        # Update moving average of the model parameters
 
+        interpolate_model(model_ema, model, beta=ema_decay)
         if e % save_step == 0:
             if device == 0:
                 save_image(pred[:, :, -1] * 0.5 + 0.5,
@@ -147,18 +150,26 @@ def train(model, dataloader,
                 save_image(states[:, :, -1] * 0.5 + 0.5,
                            f'{save_img_dir}/truth_{e}.png',
                            nrow=8)
-                torch.save(param.state_dict(), f'{save_ckpt_dir}/solver-model_{e}.pt')
+                save_path = os.path.join(save_ckpt_dir,
+                                         f'solver-model_{start_iter + e}.pt')
+                save_ckpt(save_path,
+                          model=model, model_ema=model_ema,
+                          optim=optimizer, args=args)
             # eval on validation set
             if valloader:
-                val_err = eval(model, valloader, criterion,
+                val_err = eval(model_ema, valloader, criterion,
                                device, config, True)
                 val_err_avg = all_reduce_mean(val_err)
                 log_state['val MSE'] = val_err_avg
         if use_wandb and wandb:
             wandb.log(log_state)
-    torch.save(param.state_dict(), f'{save_ckpt_dir}/solver-model_final.pt')
+    if device == 0:
+        save_path = os.path.join(save_ckpt_dir, 'solver-model_final.pt')
+        save_ckpt(save_path,
+                  model=model, model_ema=model_ema,
+                  optim=optimizer, args=args)
     # test
-    test_err = eval(model, testloader, criterion, device, config)
+    test_err = eval(model_ema, testloader, criterion, device, config)
     test_err_avg = all_reduce_mean(test_err).item()
 
     if use_wandb and wandb:
@@ -176,9 +187,16 @@ def train(model, dataloader,
 def run(train_loader, val_loader, test_loader,
         config, args, device):
     # create model
-    # model = Unet3D(dim=48, no_skipped=1).to(device)
     model_args = dict2namespace(config)
     model = TUnet(model_args).to(device)
+    if args.ckpt:
+        ckpt = torch.load(args.ckpt)
+        model.load_state_dict(ckpt)
+        print(f'Load weights from {args.ckpt}')
+
+    model_ema = copy.deepcopy(model).eval()
+    model_ema.requires_grad_(False)
+
     num_params = count_params(model)
     print(f'number of parameters: {num_params}')
     config['num_params'] = num_params
@@ -194,7 +212,7 @@ def run(train_loader, val_loader, test_loader,
         criterion = nn.L1Loss()
     else:
         criterion = nn.MSELoss()
-    train(model, train_loader,
+    train(model, model_ema, train_loader,
           criterion,
           optimizer, scheduler,
           device, config, args,
@@ -228,11 +246,17 @@ def subprocess_fn(rank, args):
     num_sample = config['data']['num_sample'] if 'num_sample' in config['data'] else 10000
     # trainset = ImageData(config['datapath'], config['t_step'], num_sample)
     idx_dict = {
-        0: [0, 1, 3, 4, 5, 6, 7, 8, 9],
-        1: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+        0: [0, 19, 3, 4, 5, 6, 7, 8, 9],
+        1: [10, 11, 12, 13, 14, 15, 16, 17, 18, 1],
         2: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
         3: [30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
     }
+    # idx_dict = {
+    #     0: [0],
+    #     1: [10],
+    #     2: [20],
+    #     3: [30]
+    # }
     trainset = H5Data(config['data']['datapath'],
                       config['data']['t_step'],
                       num_sample, index=idx_dict[rank])
@@ -265,7 +289,7 @@ def subprocess_fn(rank, args):
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
     parser.add_argument('--config', type=str, default='configs/cifar/tunet.yaml', help='configuration file')
-    parser.add_argument('--ckpt', type=str, help='Which checkpoint to initialize the model')
+    parser.add_argument('--ckpt', type=str, default=None, help='Which checkpoint to initialize the model')
     parser.add_argument('--log', action='store_true', help='turn on the wandb')
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--seed', type=int, default=None)

@@ -12,7 +12,8 @@ from utils.helper import dict2namespace
 def compute_fid(generator, args, model_args, device):
     print(f'Load weights from {args.ckpt}')
     ckpt = torch.load(args.ckpt, map_location=device)
-    generator.load_state_dict(ckpt)
+    generator.load_state_dict(ckpt['ema'])
+    generator.eval()
     img_size = args.img_size
     t0, t1 = 1., model_args.data.epsilon
     t_dim = model_args.data.t_dim

@@ -14,7 +14,7 @@ data:
 model:
     dropout: 0.0
     name: 'ncsnpp'
-    ema_rate: 0.9999
+    ema_rate: 0.995
     normalization: 'GroupNorm'
     nonlinearity: 'swish'
     nf: 128
@@ -31,21 +31,22 @@ model:
     num_modes: 2
 
 training:
-    n_iters: 50_000
+    start_iter: 29000
+    n_iters: 60_000
     batchsize: 48
     loss: L1
 
 optim:
     optimizer: 'Adam'
-    lr: 0.00004  # 2e-4
+    lr: 0.00005  # 2e-4
     milestone: [20_000, 40_000]
     eps: 0.00000001  # 1e-8
     warmup: 5000
     grad_clip: 1.
 
 log:
-    logname: cifar-tunet-560k-kd
+    logname: cifar-tunet-1008k-kd
     save_step: 10_000
     entity: hzzheng
     project: Diffusion-CIFAR10
-    group: TUnet-560k-kd
+    group: TUnet-1008k-kd

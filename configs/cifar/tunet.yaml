@@ -6,7 +6,7 @@ data:
     random_flip: True
     centered: True
     datapath: data/cifar10/train
-    num_sample: 112000
+    num_sample: 1092000
     epsilon: 0.00001
     t_dim: 33
     t_step: 16
@@ -14,7 +14,7 @@ data:
 model:
     dropout: 0.0
     name: 'ncsnpp'
-    ema_rate: 0.9999
+    ema_rate: 0.995
     normalization: 'GroupNorm'
     nonlinearity: 'swish'
     nf: 128
@@ -31,9 +31,9 @@ model:
     num_modes: 2
 
 training:
-    n_iters: 250_000
+    n_iters: 200_000
     batchsize: 40
-    loss: L1
+    loss: L2
 
 optim:
     optimizer: 'Adam'
@@ -44,8 +44,8 @@ optim:
     grad_clip: 1.
 
 log:
-    logname: cifar-tunet-560k-kd
+    logname: cifar-tunet-1092k-kd
     save_step: 10_000
     entity: hzzheng
     project: Diffusion-CIFAR10
-    group: TUnet-560k-kd
+    group: TUnet-1092k-t3
