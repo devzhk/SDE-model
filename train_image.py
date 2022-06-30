@@ -10,7 +10,8 @@ import torch.nn as nn
 import yaml
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Adam
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR, LinearLR
+
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from tqdm import tqdm
@@ -30,7 +31,7 @@ except ImportError:
 
 
 def eval(model, dataloader, criterion,
-         device, config, plot=False):
+         device, config, epoch=-1):
     t_dim = config['data']['t_dim']
     t_step = config['data']['t_step']
     num_t = math.ceil(t_dim / t_step)
@@ -66,9 +67,9 @@ def eval(model, dataloader, criterion,
         print(f'MSE of the whole trajectory: {test_err}')
         print(f'MSE at time 0: {err_T}')
         save_image(pred[:, :, -1] * 0.5 + 0.5,
-                   f'{save_img_dir}/pred_test.png')
+                   f'{save_img_dir}/pred_test_{epoch}.png')
         save_image(states[:, :, -1] * 0.5 + 0.5,
-                   f'{save_img_dir}/truth_test.png')
+                   f'{save_img_dir}/truth_test_{epoch}.png')
     return err_T
 
 
@@ -158,7 +159,7 @@ def train(model, model_ema,
             # eval on validation set
             if valloader:
                 val_err = eval(model_ema, valloader, criterion,
-                               device, config, True)
+                               device, config, epoch=e)
                 val_err_avg = all_reduce_mean(val_err)
                 log_state['val MSE'] = val_err_avg
         if use_wandb and wandb:
@@ -169,7 +170,7 @@ def train(model, model_ema,
                   model=model, model_ema=model_ema,
                   optim=optimizer, args=args)
     # test
-    test_err = eval(model_ema, testloader, criterion, device, config)
+    test_err = eval(model_ema, testloader, criterion, device, config, e)
     test_err_avg = all_reduce_mean(test_err).item()
 
     if use_wandb and wandb:
@@ -205,9 +206,10 @@ def run(train_loader, val_loader, test_loader,
         model = DDP(model, device_ids=[device], broadcast_buffers=False)
     # define optimizer and criterion
     optimizer = Adam(model.parameters(), lr=config['optim']['lr'])
-    scheduler = MultiStepLR(optimizer,
-                            milestones=config['optim']['milestone'],
-                            gamma=0.5)
+    scheduler = LinearLR(optimizer, start_factor=0.01, total_iters=config['optim']['warmup'])
+    # scheduler = MultiStepLR(optimizer,
+    #                         milestones=config['optim']['milestone'],
+    #                         gamma=0.5)
     if config['training']['loss'] == 'L1':
         criterion = nn.L1Loss()
     else:
@@ -247,7 +249,7 @@ def subprocess_fn(rank, args):
     # trainset = ImageData(config['datapath'], config['t_step'], num_sample)
     idx_dict = {
         0: [0, 19, 3, 4, 5, 6, 7, 8, 9],
-        1: [10, 11, 12, 13, 14, 15, 16, 17, 18, 1],
+        1: [10, 11, 12, 13, 14, 15, 16, 17, 18],
         2: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
         3: [30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
     }

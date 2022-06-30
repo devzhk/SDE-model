@@ -31,6 +31,7 @@ model:
     num_modes: 2
 
 training:
+    start_iter: 0
     n_iters: 200_000
     batchsize: 40
     loss: L2
@@ -44,8 +45,8 @@ optim:
     grad_clip: 1.
 
 log:
-    logname: cifar-tunet-1092k-kd
+    logname: cifar-tunet-1064k-t3
     save_step: 10_000
     entity: hzzheng
     project: Diffusion-CIFAR10
-    group: TUnet-1092k-t3
+    group: TUnet-1064k-t3

@@ -4,7 +4,7 @@ channels:
   - nvidia
   - conda-forge
 dependencies:
-  - python3 >= 3.8
+  - python3 == 3.8
   - pip
   - pytorch == 1.11.0
   - cudatoolkit == 11.5.1
@@ -17,3 +17,4 @@ dependencies:
   - matplotlib == 3.5.1
   - wandb
   - torchdiffeq
+  - clean-fid
