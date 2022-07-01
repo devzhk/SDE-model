@@ -1,4 +1,5 @@
 import os
+import psutil
 import h5py
 
 import torch
@@ -64,9 +65,13 @@ class H5Data(Dataset):
                     datapath = os.path.join(data_dir, f'ode_data_sd{idx}.h5')
                 with h5py.File(datapath, 'r') as f:
                     dset = f['data_t33'][:, ::self.t_step]
+                # memory_use = psutil.Process().memory_info().rss / (1024 * 1024)
+                # print(f'Memory usage: {memory_use} MB')
                 print(f'Read data from {datapath}')
                 dset = torch.from_numpy(dset).to(torch.float32)
                 trunk_list.append(dset)
+                # memory_use = psutil.Process().memory_info().rss / (1024 * 1024)
+                # print(f'Memory usage: {memory_use} MB')
             self.dset = torch.cat(trunk_list, dim=0).permute(0, 2, 1, 3, 4)
             self.datasize = self.dset.shape[0]
         else:

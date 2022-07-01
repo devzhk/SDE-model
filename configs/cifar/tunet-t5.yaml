@@ -6,6 +6,7 @@ data:
     random_flip: True
     centered: True
     datapath: data/cifar10/train
+    dir_type: subfolder
     num_sample: 1064000
     epsilon: 0.00001
     t_dim: 33
@@ -33,16 +34,16 @@ model:
 training:
     start_iter: 0
     n_iters: 60_001
-    batchsize: 32
+    batchsize: 40
     loss: L2
 
 eval:
     save_step: 5_000
-    test_fid: False
+    test_fid: True
 
 optim:
     optimizer: 'Adam'
-    lr: 0.0004  # 2e-4
+    lr: 0.0002  # 2e-4
     milestone: [50_000, 100_000, 150_000]
     eps: 0.00000001  # 1e-8
     warmup: 5000

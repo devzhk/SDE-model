@@ -72,8 +72,7 @@ def train(model, model_ema,
           criterion,
           optimizer, scheduler,
           device, config, args,
-          valloader=None,
-          testloader=None):
+          valloader=None):
     # get configuration
     t_dim = config['data']['t_dim']
     t_step = config['data']['t_step']
@@ -171,7 +170,6 @@ def train(model, model_ema,
         if use_wandb and wandb:
             wandb.log(log_state)
 
-
     if device == 0:
         save_path = os.path.join(save_ckpt_dir, 'solver-model_final.pt')
         save_ckpt(save_path,
@@ -182,8 +180,7 @@ def train(model, model_ema,
         run.finish()
 
 
-
-def run(train_loader, val_loader, test_loader,
+def run(train_loader, test_loader,
         config, args, device):
     # create model
     model_args = dict2namespace(config)
@@ -243,18 +240,18 @@ def subprocess_fn(rank, args):
         torch.cuda.manual_seed_all(seed)
     num_sample = config['data']['num_sample'] if 'num_sample' in config['data'] else 10000
     dir_type = config['data']['dir_type'] if 'dir_type' in config['data'] else None
-    # idx_dict = {
-    #     0: [0, 19, 3, 4, 5, 6, 7, 8, 9],
-    #     1: [10, 11, 12, 13, 14, 15, 16, 17, 18],
-    #     2: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
-    #     3: [30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
-    # }
     idx_dict = {
-        0: [0],
-        1: [10],
-        2: [20],
-        3: [30]
+        0: [0, 19, 3, 4, 5, 6, 7, 8, 9],
+        1: [10, 11, 12, 13, 14, 15, 16, 17, 18, 1],
+        2: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
+        3: [30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
     }
+    # idx_dict = {
+    #     0: [0],
+    #     1: [10],
+    #     2: [20],
+    #     3: [30]
+    # }
     trainset = H5Data(config['data']['datapath'],
                       config['data']['t_step'],
                       num_sample, index=idx_dict[rank], dir_type=dir_type)
@@ -264,17 +261,17 @@ def subprocess_fn(rank, args):
                                                    distributed=False),
                               drop_last=True)
     # test set
-    testset = H5Data(config['data']['datapath'],
-                     config['data']['t_step'],
-                     num_sample=5000, index=[1], dir_type=dir_type)
-    test_loader = DataLoader(testset, batch_size=batchsize,
-                             sampler=data_sampler(testset,
-                                                  shuffle=True,
-                                                  distributed=args.distributed),
-                             drop_last=True)
+    # testset = H5Data(config['data']['datapath'],
+    #                  config['data']['t_step'],
+    #                  num_sample=5000, index=[1], dir_type=dir_type)
+    # test_loader = DataLoader(testset, batch_size=batchsize,
+    #                          sampler=data_sampler(testset,
+    #                                               shuffle=True,
+    #                                               distributed=args.distributed),
+    #                          drop_last=True)
 
     for i in range(args.repeat):
-        run(train_loader, test_loader, test_loader, config, args, device)
+        run(train_loader, test_loader=None, config=config, args=args, device=device)
     print(f'{args.repeat} runs done!')
     if args.distributed:
         cleanup()
