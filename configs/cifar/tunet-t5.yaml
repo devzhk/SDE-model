@@ -6,10 +6,10 @@ data:
     random_flip: True
     centered: True
     datapath: data/cifar10/train
-    num_sample: 1092000
+    num_sample: 1064000
     epsilon: 0.00001
     t_dim: 33
-    t_step: 16
+    t_step: 8
 
 model:
     dropout: 0.0
@@ -18,7 +18,7 @@ model:
     normalization: 'GroupNorm'
     nonlinearity: 'swish'
     nf: 128
-    ch_mult: [1, 1, 1]  # (1, 2, 2, 2)
+    ch_mult: [1, 2, 2, 2]  # (1, 2, 2, 2)
     num_res_blocks: 3
     attn_resolutions: [8, 16]  # (16,)
     resamp_with_conv: True
@@ -32,12 +32,12 @@ model:
 
 training:
     start_iter: 0
-    n_iters: 200_000
-    batchsize: 40
+    n_iters: 60_001
+    batchsize: 32
     loss: L2
 
 eval:
-    save_step: 10_000
+    save_step: 5_000
     test_fid: False
 
 optim:
@@ -49,8 +49,7 @@ optim:
     grad_clip: 1.
 
 log:
-    logname: cifar-tunet-1064k-t3
-    save_step: 10_000
+    logname: cifar-tunet-1064k-t5
     entity: hzzheng
     project: Diffusion-CIFAR10
-    group: TUnet-1064k-t3
+    group: TUnet-1064k-t5

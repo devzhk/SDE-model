@@ -32,13 +32,13 @@ class TUnet(nn.Module):
 
     AttnBlock = functools.partial(layers.AttnBlock)
     self.conditional = conditional = config.model.conditional
-    ResnetBlock = functools.partial(ResnetBlockDDPM, act=act, temb_dim=nf, dropout=dropout)
+    ResnetBlock = functools.partial(ResnetBlockDDPM, act=act, temb_dim=4 * nf, dropout=dropout)
     if conditional:
       # Condition on noise levels.
-      modules = [nn.Linear(nf, nf)]
+      modules = [nn.Linear(nf, 4 * nf)]
       modules[0].weight.data = default_initializer()(modules[0].weight.data.shape)
       nn.init.zeros_(modules[0].bias)
-      modules.append(nn.Linear(nf, nf))
+      modules.append(nn.Linear(4 * nf, 4 * nf))
       modules[1].weight.data = default_initializer()(modules[1].weight.data.shape)
       nn.init.zeros_(modules[1].bias)
 
@@ -46,7 +46,7 @@ class TUnet(nn.Module):
     channels = config.data.num_channels
 
     # Downsampling block
-    modules.append(bblock(channels, nf))
+    modules.append(bblock(channels, nf, act, temb_dim=4 * nf))
     hs_c = [nf]
     in_ch = nf
     for i_level in range(num_resolutions):

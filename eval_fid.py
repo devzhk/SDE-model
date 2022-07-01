@@ -9,17 +9,16 @@ from models.tunet import TUnet
 from utils.helper import dict2namespace
 
 
-def compute_fid(generator, args, model_args, device):
-    print(f'Load weights from {args.ckpt}')
-    ckpt = torch.load(args.ckpt, map_location=device)
-    generator.load_state_dict(ckpt['ema'])
-    generator.eval()
-    img_size = args.img_size
-    t0, t1 = 1., model_args.data.epsilon
-    t_dim = model_args.data.t_dim
-    t_step = model_args.data.t_step
 
-    num_t = math.ceil(t_dim / t_step)
+def compute_fid(generator,
+                t0, t1,
+                num_t,
+                z_dim=3072,
+                img_size=32,
+                dataname='cifar10',
+                datasplit='train',
+                device=torch.device('cpu')):
+    generator.eval()
     timesteps = torch.linspace(t0, t1, num_t, device=device)
     def gen(z):
 
@@ -28,8 +27,8 @@ def compute_fid(generator, args, model_args, device):
         return img_int
     # gen = lambda z: generator(z.reshape(-1, 3, img_size, img_size)).add_(1).mul(127.5).clamp_(0, 255).to(torch.uint8)
 
-    score = fid.compute_fid(gen=gen, dataset_name=args.dataname, dataset_split=args.datasplit,
-                            dataset_res=img_size, z_dim=args.z_dim)
+    score = fid.compute_fid(gen=gen, dataset_name=dataname, dataset_split=datasplit,
+                            dataset_res=img_size, z_dim=z_dim)
     print(f'FID score: {score}')
     return score
 
@@ -47,10 +46,27 @@ if __name__ == '__main__':
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+    # parse configuration
     with open(args.config, 'r') as f:
         config = yaml.load(f, yaml.FullLoader)
     model_args = dict2namespace(config)
 
-    model = TUnet(model_args).to(device)
+    t_dim = model_args.data.t_dim
+    t_step = model_args.data.t_step
+    num_t = math.ceil(t_dim / t_step)
 
-    compute_fid(model, args, model_args, device)
+    # create model from configuration
+    generator = TUnet(model_args).to(device)
+    # Load weights
+    print(f'Load weights from {args.ckpt}')
+    ckpt = torch.load(args.ckpt, map_location=device)
+    generator.load_state_dict(ckpt['ema'])
+
+    compute_fid(generator,
+                t0=1.0, t1=model_args.data.epsilon,
+                num_t=num_t,
+                z_dim=args.z_dim,
+                img_size=args.img_size,
+                dataname=args.dataname,
+                datasplit=args.datasplit,
+                device=device)

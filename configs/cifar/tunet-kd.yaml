@@ -32,10 +32,13 @@ model:
 
 training:
     start_iter: 0
-    n_iters: 100_000
+    n_iters: 50_001
     batchsize: 64
     loss: L1
-    eval_fid: True
+
+eval:
+    save_step: 500
+    test_fid: False
 
 optim:
     optimizer: 'Adam'
@@ -48,7 +51,6 @@ optim:
 
 log:
     logname: cifar-tunet-1064k-kd
-    save_step: 10_000
     entity: hzzheng
     project: Diffusion-CIFAR10
     group: TUnet-1064k-kd

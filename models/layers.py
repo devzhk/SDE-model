@@ -343,9 +343,14 @@ class BBlock(nn.Module):
     Block for lifting channels
     project and add
     '''
-    def __init__(self, in_ch, out_ch):
+    def __init__(self, in_ch, out_ch, act, temb_dim=None):
         super(BBlock, self).__init__()
         self.proj = ddpm_conv3x3(in_ch, out_ch)
+        self.act = act
+        if temb_dim is not None:
+            self.Dense_0 = nn.Linear(temb_dim, out_ch)
+            self.Dense_0.weight.data = default_init()(self.Dense_0.weight.data.shape)
+            nn.init.zeros_(self.Dense_0.bias)
 
     def forward(self, x, temb=None):
         '''
@@ -354,8 +359,11 @@ class BBlock(nn.Module):
         '''
 
         h = self.proj(x)[:, :, None, :, :]
-        assert temb.shape[1] == h.shape[1]
-        return h + temb.permute(1, 0)[None, :, :, None, None]
+        if temb is not None:
+            th = self.Dense_0(self.act(temb)).permute(1, 0)[None, :, :, None, None]
+        else:
+            th = 0
+        return h + th
 
 
 def compl_mul1d(a, b):

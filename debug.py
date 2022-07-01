@@ -10,7 +10,7 @@ import torch.multiprocessing as mp
 from models.layers import ResnetBlockDDPM, BBlock, Upsample, Downsample, TimeConv, get_timestep_embedding
 from models.tunet import TUnet
 from utils.distributed import setup, cleanup
-from utils.helper import dict2namespace
+from utils.helper import dict2namespace, count_params
 
 
 # Test for ResnetBlockDDPM
@@ -90,7 +90,8 @@ def test_tunet(rank, args):
         model_config = yaml.load(f, yaml.FullLoader)
     model_args = dict2namespace(model_config)
     model = TUnet(model_args)
-
+    num_params = count_params(model)
+    print(f'Number of model parameters: {num_params}')
     B, C, T, H, W = 4, 3, 7, 32, 32
     timesteps = torch.linspace(0, 1, T)
 
@@ -105,17 +106,10 @@ def test_temb(device, args):
     print(temb.shape)
 
 
-def test_attn(device, args):
-    B, C, T, H, W = 4, 16, 5, 8, 8
-    image = torch.randn((B, C, T, H, W))
-
-
-
-
 if __name__ == '__main__':
     parser = ArgumentParser(description='Basic parser')
     parser.add_argument('--num_gpus', type=int, default=1)
-    parser.add_argument('--config', type=str, default='configs/cifar/tunet.yaml')
+    parser.add_argument('--config', type=str, default='configs/cifar/tunet-kd.yaml')
     args = parser.parse_args()
     args.distributed = args.num_gpus > 1
 

@@ -51,14 +51,17 @@ class ImageData(Dataset):
 
 
 class H5Data(Dataset):
-    def __init__(self, data_dir, t_step, num_sample=10000, index=[0,]):
+    def __init__(self, data_dir, t_step, num_sample=10000, index=[0,], dir_type=None):
         super(H5Data, self).__init__()
         self.data_dir = data_dir
         self.t_step = t_step
         if num_sample > 28000:
             trunk_list = []
             for idx in index:
-                datapath = os.path.join(data_dir, f'ode_data_sd{idx}.h5')
+                if dir_type == 'subfolder':
+                    datapath = os.path.join(data_dir, f'seed{idx}', f'ode_data_sd{idx}.h5')
+                else:
+                    datapath = os.path.join(data_dir, f'ode_data_sd{idx}.h5')
                 with h5py.File(datapath, 'r') as f:
                     dset = f['data_t33'][:, ::self.t_step]
                 print(f'Read data from {datapath}')
@@ -76,7 +79,6 @@ class H5Data(Dataset):
 
     def __getitem__(self, item):
         img = self.dset[item]
-        # tensor_imgs = torch.from_numpy(raw_imgs[::self.t_step]).to(torch.float32).permute(1, 0, 2, 3)
         return img
 
     def __len__(self):
