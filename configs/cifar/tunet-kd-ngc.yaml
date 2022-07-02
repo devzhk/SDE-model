@@ -51,7 +51,7 @@ optim:
     grad_clip: 1.
 
 log:
-    logname: cifar-tunet-1064k-kd
+    logname: cifar-tunet-1092k-kd
     entity: hzzheng
     project: Diffusion-CIFAR10
-    group: TUnet-1064k-kd
+    group: TUnet-1092k-kd
