@@ -6,7 +6,7 @@ data:
     random_flip: True
     centered: True
     datapath: data/cifar10/train
-    dir_type: subfolder
+    dir_type: file
     num_sample: 1064000
     epsilon: 0.00001
     t_dim: 33
@@ -20,7 +20,7 @@ model:
     nonlinearity: 'swish'
     nf: 128
     ch_mult: [1, 2, 2, 2]  # (1, 2, 2, 2)
-    num_res_blocks: 3
+    num_res_blocks: 2
     attn_resolutions: [8, 16]  # (16,)
     resamp_with_conv: True
     conditional: True
@@ -29,12 +29,12 @@ model:
     embedding_type: 'positional'
     fourier_scale: 16
     conv_size: 3
-    num_modes: 2
+    num_modes: 3
 
 training:
     start_iter: 0
-    n_iters: 60_001
-    batchsize: 40
+    n_iters: 100_001
+    batchsize: 16
     loss: L2
 
 eval:
@@ -43,7 +43,7 @@ eval:
 
 optim:
     optimizer: 'Adam'
-    lr: 0.0002  # 2e-4
+    lr: 0.0001  # 2e-4
     milestone: [50_000, 100_000, 150_000]
     eps: 0.00000001  # 1e-8
     warmup: 5000

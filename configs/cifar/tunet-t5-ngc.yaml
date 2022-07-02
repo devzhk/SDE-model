@@ -7,7 +7,7 @@ data:
     centered: True
     datapath: exp/cifar_sample/images
     dir_type: subfolder
-    num_sample: 1064000
+    num_sample: 1092000
     epsilon: 0.00001
     t_dim: 33
     t_step: 8
@@ -20,7 +20,7 @@ model:
     nonlinearity: 'swish'
     nf: 128
     ch_mult: [1, 2, 2, 2]  # (1, 2, 2, 2)
-    num_res_blocks: 3
+    num_res_blocks: 2
     attn_resolutions: [8, 16]  # (16,)
     resamp_with_conv: True
     conditional: True
@@ -29,7 +29,7 @@ model:
     embedding_type: 'positional'
     fourier_scale: 16
     conv_size: 3
-    num_modes: 2
+    num_modes: 3
 
 training:
     start_iter: 0
@@ -50,7 +50,7 @@ optim:
     grad_clip: 1.
 
 log:
-    logname: cifar-tunet-1064k-t5
+    logname: cifar-tunet-1092k-t5
     entity: hzzheng
     project: Diffusion-CIFAR10
-    group: TUnet-1064k-t5
+    group: TUnet-1092k-t5

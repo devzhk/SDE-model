@@ -6,6 +6,17 @@ import torch
 from torch.utils.data import Dataset
 
 
+def split_list(arr, num_parts=4):
+    data_dict = {}
+    chunk_size = len(arr) // num_parts
+    for i in range(num_parts):
+        data_dict[i] = arr[i * chunk_size: (i + 1) * chunk_size]
+    rem = len(arr) % num_parts
+    for j in range(rem):
+        data_dict[j].append(arr[num_parts * chunk_size + j])
+    return data_dict
+
+
 def get_init(x, ts):
     '''
     x: (batchsize, t_dim, 1)

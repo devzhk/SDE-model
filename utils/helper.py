@@ -7,11 +7,6 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
 
-import torch
-import jax
-# from .sde_lib import VPSDE, VESDE, subVPSDE
-
-
 
 def count_params(model):
     num = 0
@@ -150,9 +145,6 @@ def dict2namespace(config):
         setattr(namespace, key, new_value)
     return namespace
 
-
-def batch_mul(a, b):
-  return jax.vmap(lambda a, b: a * b)(a, b)
 
 
 '''

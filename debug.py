@@ -107,21 +107,36 @@ def test_temb(device, args):
 
 
 if __name__ == '__main__':
-    parser = ArgumentParser(description='Basic parser')
-    parser.add_argument('--num_gpus', type=int, default=1)
-    parser.add_argument('--config', type=str, default='configs/cifar/tunet-kd.yaml')
-    args = parser.parse_args()
-    args.distributed = args.num_gpus > 1
 
-    # subprocess = test_fno
-    # subprocess = test_temb
-    subprocess = test_tunet
+    def split_list(arr, num_parts=4):
+        data_dict = {}
+        chunk_size = len(arr) // num_parts
+        for i in range(num_parts):
+            data_dict[i] = arr[i * chunk_size: (i + 1) * chunk_size]
+        rem = len(arr) % num_parts
+        for j in range(rem):
+            data_dict[j].append(arr[num_parts * chunk_size + j])
+        return data_dict
 
-    device = 0 if torch.cuda.is_available() else 'cpu'
-    if args.distributed:
-        mp.spawn(subprocess, args=(args, ), nprocs=args.num_gpus)
-    else:
-        subprocess(device, args)
+    arr = [0, 1] + list(range(3, 40))
+    data_dict = split_list(arr, 8)
+    print(data_dict)
+
+    # parser = ArgumentParser(description='Basic parser')
+    # parser.add_argument('--num_gpus', type=int, default=1)
+    # parser.add_argument('--config', type=str, default='configs/cifar/tunet-kd.yaml')
+    # args = parser.parse_args()
+    # args.distributed = args.num_gpus > 1
+    #
+    # # subprocess = test_fno
+    # # subprocess = test_temb
+    # subprocess = test_tunet
+    #
+    # device = 0 if torch.cuda.is_available() else 'cpu'
+    # if args.distributed:
+    #     mp.spawn(subprocess, args=(args, ), nprocs=args.num_gpus)
+    # else:
+    #     subprocess(device, args)
     # test_bblock()
     # test_sample()
 

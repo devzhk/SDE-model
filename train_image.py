@@ -20,7 +20,7 @@ from tqdm import tqdm
 from models.tunet import TUnet
 from models.utils import save_ckpt, interpolate_model
 from utils.data_helper import data_sampler, sample_data
-from utils.dataset import H5Data
+from utils.dataset import H5Data, split_list
 from utils.distributed import setup, cleanup, reduce_loss_dict, all_reduce_mean
 from utils.helper import count_params, dict2namespace
 
@@ -144,8 +144,8 @@ def train(model, model_ema,
         interpolate_model(model_ema, model, beta=ema_decay)
 
         if e % save_step == 0:
-            memory_use = psutil.Process().memory_info().rss / (1024 * 1024)
-            print(f'Step {e}; Memory usage: {memory_use} MB')
+            # memory_use = psutil.Process().memory_info().rss / (1024 * 1024)
+            # print(f'Step {e}; Memory usage: {memory_use} MB')
             if device == 0:
                 save_image(pred[:, :, -1] * 0.5 + 0.5,
                            f'{save_img_dir}/pred_{e}.png',
@@ -240,12 +240,9 @@ def subprocess_fn(rank, args):
         torch.cuda.manual_seed_all(seed)
     num_sample = config['data']['num_sample'] if 'num_sample' in config['data'] else 10000
     dir_type = config['data']['dir_type'] if 'dir_type' in config['data'] else None
-    idx_dict = {
-        0: [0, 19, 3, 4, 5, 6, 7, 8, 9],
-        1: [10, 11, 12, 13, 14, 15, 16, 17, 18, 1],
-        2: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
-        3: [30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
-    }
+
+    data_list = [0, 1] + list(range(3, 40))
+    idx_dict = split_list(data_list, num_parts=args.num_gpus)
     # idx_dict = {
     #     0: [0],
     #     1: [10],

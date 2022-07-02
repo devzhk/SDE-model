@@ -18,8 +18,8 @@ model:
     normalization: 'GroupNorm'
     nonlinearity: 'swish'
     nf: 128
-    ch_mult: [1, 1, 1]  # (1, 2, 2, 2)
-    num_res_blocks: 3
+    ch_mult: [1, 2, 2, 2]  # (1, 2, 2, 2)
+    num_res_blocks: 2
     attn_resolutions: [8, 16]  # (16,)
     resamp_with_conv: True
     conditional: True
