@@ -31,22 +31,23 @@ model:
     ema_rate: 0.995
 
 training:
-    start_iter: 0
+    start_iter: 71500
     n_iters: 50_001
     batchsize: 64
     loss: L1
 
 eval:
-    save_step: 500
-    test_fid: False
+    save_step: 5000
+    test_fid: True
 
 optim:
     optimizer: 'Adam'
-    lr: 0.0002  # 2e-4
+    lr: 0.0001  # 2e-4
     beta1: 0.9
     beta2: 0.98
     eps: 0.00000001  # 1e-8
-    warmup: 5000
+    milestone: [10_000, 20_000, 30_000, 40_000]
+    warmup: 500
     grad_clip: 1.
 
 log:

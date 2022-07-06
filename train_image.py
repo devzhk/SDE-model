@@ -11,7 +11,7 @@ import torch.nn as nn
 import yaml
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Adam
-from torch.optim.lr_scheduler import MultiStepLR, LinearLR
+from torch.optim.lr_scheduler import MultiStepLR, LinearLR, ChainedScheduler
 
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
@@ -185,13 +185,14 @@ def run(train_loader, test_loader,
     # create model
     model_args = dict2namespace(config)
     model = TUnet(model_args).to(device)
-    if args.ckpt:
-        ckpt = torch.load(args.ckpt)
-        model.load_state_dict(ckpt)
-        print(f'Load weights from {args.ckpt}')
-
     model_ema = copy.deepcopy(model).eval()
     model_ema.requires_grad_(False)
+
+    if args.ckpt:
+        ckpt = torch.load(args.ckpt)
+        model.load_state_dict(ckpt['model'])
+        model_ema.load_state_dict(ckpt['ema'])
+        print(f'Load weights from {args.ckpt}')
 
     num_params = count_params(model)
     print(f'number of parameters: {num_params}')
@@ -201,10 +202,11 @@ def run(train_loader, test_loader,
         model = DDP(model, device_ids=[device], broadcast_buffers=False)
     # define optimizer and criterion
     optimizer = Adam(model.parameters(), lr=config['optim']['lr'])
-    scheduler = LinearLR(optimizer, start_factor=0.01, total_iters=config['optim']['warmup'])
-    # scheduler = MultiStepLR(optimizer,
-    #                         milestones=config['optim']['milestone'],
-    #                         gamma=0.5)
+    scheduler1 = LinearLR(optimizer, start_factor=0.01, total_iters=config['optim']['warmup'])
+    scheduler2 = MultiStepLR(optimizer,
+                            milestones=config['optim']['milestone'],
+                            gamma=0.5)
+    scheduler = ChainedScheduler([scheduler1, scheduler2])
     if config['training']['loss'] == 'L1':
         criterion = nn.L1Loss()
     else:
