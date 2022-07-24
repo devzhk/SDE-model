@@ -7,7 +7,7 @@ from cleanfid import fid
 
 from models.tunet import TUnet
 from utils.helper import dict2namespace
-
+from utils.dataset import H5Data
 
 
 def compute_fid(generator,
@@ -33,6 +33,26 @@ def compute_fid(generator,
     return score
 
 
+def fid_from_dset(z_dim=3,
+                  img_size=32,
+                  dataname='cifar10',
+                  datasplit='train',
+                  device=torch.device('cpu')):
+    data_dir = 'data/cifar10/train'
+    dataset = H5Data(data_dir=data_dir, t_step=32, num_sample=500000, index=[3, 4])
+    print(len(dataset))
+    def gen(z):
+        B = z.shape[0]
+        img = dataset.get_batch(B)
+        img_int = img.add_(1).mul(127.5).clamp_(0, 255).to(torch.uint8).to(device)
+        return img_int
+
+    score = fid.compute_fid(gen=gen, dataset_name=dataname, dataset_split=datasplit,
+                            dataset_res=img_size, z_dim=z_dim)
+    print(f'FID score: {score}')
+    return score
+
+
 if __name__ == '__main__':
     parser = ArgumentParser('basic parser for evaluating FID score')
     parser.add_argument('--dataname', type=str, default='cifar10')
@@ -51,22 +71,24 @@ if __name__ == '__main__':
         config = yaml.load(f, yaml.FullLoader)
     model_args = dict2namespace(config)
 
-    t_dim = model_args.data.t_dim
-    t_step = model_args.data.t_step
-    num_t = math.ceil(t_dim / t_step)
+    # t_dim = model_args.data.t_dim
+    # t_step = model_args.data.t_step
+    # num_t = math.ceil(t_dim / t_step)
+    #
+    # # create model from configuration
+    # generator = TUnet(model_args).to(device)
+    # # Load weights
+    # print(f'Load weights from {args.ckpt}')
+    # ckpt = torch.load(args.ckpt, map_location=device)
+    # generator.load_state_dict(ckpt['ema'])
+    #
+    # compute_fid(generator,
+    #             t0=1.0, t1=model_args.data.epsilon,
+    #             num_t=num_t,
+    #             z_dim=args.z_dim,
+    #             img_size=args.img_size,
+    #             dataname=args.dataname,
+    #             datasplit=args.datasplit,
+    #             device=device)
 
-    # create model from configuration
-    generator = TUnet(model_args).to(device)
-    # Load weights
-    print(f'Load weights from {args.ckpt}')
-    ckpt = torch.load(args.ckpt, map_location=device)
-    generator.load_state_dict(ckpt['ema'])
-
-    compute_fid(generator,
-                t0=1.0, t1=model_args.data.epsilon,
-                num_t=num_t,
-                z_dim=args.z_dim,
-                img_size=args.img_size,
-                dataname=args.dataname,
-                datasplit=args.datasplit,
-                device=device)
+    fid_from_dset(device=device)

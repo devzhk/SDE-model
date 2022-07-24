@@ -92,10 +92,17 @@ class H5Data(Dataset):
                 dset = f['data_t33'][0:num_sample, ::self.t_step]
             self.dset = torch.from_numpy(dset).to(torch.float32).permute(0, 2, 1, 3, 4)
             self.datasize = num_sample
+        self.curr_idx = 0
 
     def __getitem__(self, item):
+        # B, C, T, H, W
         img = self.dset[item]
         return img
 
     def __len__(self):
         return self.datasize
+
+    def get_batch(self, B):
+        batch = self.dset[self.curr_idx: self.curr_idx + B, :, -1]
+        self.curr_idx += B
+        return batch
