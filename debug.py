@@ -16,7 +16,8 @@ from utils.helper import dict2namespace, count_params
 # Test for ResnetBlockDDPM
 def test_resblockDDPM(device, args):
     act = nn.SiLU()
-    net = ResnetBlockDDPM(act=act, in_ch=64, out_ch=32, temb_dim=3, conv_shortcut=True)
+    net = ResnetBlockDDPM(act=act, in_ch=64, out_ch=32,
+                          temb_dim=3, conv_shortcut=True)
     B, C, T, H, W = 4, 64, 4, 32, 32
     image = torch.randn((B, C, T, H, W))
     time_emb = torch.randn((T, 3))
@@ -71,7 +72,6 @@ def test_fno(rank, args):
     else:
         model = block
 
-
     # print(f'Input {ys[0, 1, 2]}')
     pred = block(ys)
     loss = torch.mean(pred)
@@ -107,36 +107,22 @@ def test_temb(device, args):
 
 
 if __name__ == '__main__':
+    parser = ArgumentParser(description='Basic parser')
+    parser.add_argument('--num_gpus', type=int, default=1)
+    parser.add_argument('--config', type=str,
+                        default='configs/cifar/tunet-kd.yaml')
+    parser.add_argument('--ckpt', type=str, default='ckpts/checkpoint_14.pth')
+    args = parser.parse_args()
+    args.distributed = args.num_gpus > 1
 
-    def split_list(arr, num_parts=4):
-        data_dict = {}
-        chunk_size = len(arr) // num_parts
-        for i in range(num_parts):
-            data_dict[i] = arr[i * chunk_size: (i + 1) * chunk_size]
-        rem = len(arr) % num_parts
-        for j in range(rem):
-            data_dict[j].append(arr[num_parts * chunk_size + j])
-        return data_dict
+    # subprocess = test_fno
+    # subprocess = test_temb
+    subprocess = test_tunet
 
-    arr = [0, 1] + list(range(3, 40))
-    data_dict = split_list(arr, 8)
-    print(data_dict)
-
-    # parser = ArgumentParser(description='Basic parser')
-    # parser.add_argument('--num_gpus', type=int, default=1)
-    # parser.add_argument('--config', type=str, default='configs/cifar/tunet-kd.yaml')
-    # args = parser.parse_args()
-    # args.distributed = args.num_gpus > 1
-    #
-    # # subprocess = test_fno
-    # # subprocess = test_temb
-    # subprocess = test_tunet
-    #
-    # device = 0 if torch.cuda.is_available() else 'cpu'
-    # if args.distributed:
-    #     mp.spawn(subprocess, args=(args, ), nprocs=args.num_gpus)
-    # else:
-    #     subprocess(device, args)
-    # test_bblock()
-    # test_sample()
-
+    device = 0 if torch.cuda.is_available() else 'cpu'
+    if args.distributed:
+        mp.spawn(subprocess, args=(args, ), nprocs=args.num_gpus)
+    else:
+        subprocess(device, args)
+    test_bblock()
+    test_sample()

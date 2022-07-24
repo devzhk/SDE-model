@@ -349,7 +349,7 @@ class BBlock(nn.Module):
         self.act = act
         if temb_dim is not None:
             self.Dense_0 = nn.Linear(temb_dim, out_ch)
-            self.Dense_0.weight.data = default_init()(self.Dense_0.weight.data.shape)
+            self.Dense_0.weight.data = default_init(1e-3)(self.Dense_0.weight.data.shape)
             nn.init.zeros_(self.Dense_0.bias)
 
     def forward(self, x, temb=None):
