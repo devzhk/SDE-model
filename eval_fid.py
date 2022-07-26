@@ -71,24 +71,24 @@ if __name__ == '__main__':
         config = yaml.load(f, yaml.FullLoader)
     model_args = dict2namespace(config)
 
-    # t_dim = model_args.data.t_dim
-    # t_step = model_args.data.t_step
-    # num_t = math.ceil(t_dim / t_step)
-    #
-    # # create model from configuration
-    # generator = TUnet(model_args).to(device)
-    # # Load weights
-    # print(f'Load weights from {args.ckpt}')
-    # ckpt = torch.load(args.ckpt, map_location=device)
-    # generator.load_state_dict(ckpt['ema'])
-    #
-    # compute_fid(generator,
-    #             t0=1.0, t1=model_args.data.epsilon,
-    #             num_t=num_t,
-    #             z_dim=args.z_dim,
-    #             img_size=args.img_size,
-    #             dataname=args.dataname,
-    #             datasplit=args.datasplit,
-    #             device=device)
+    t_dim = model_args.data.t_dim
+    t_step = model_args.data.t_step
+    num_t = math.ceil(t_dim / t_step)
 
-    fid_from_dset(device=device)
+    # create model from configuration
+    generator = TUnet(model_args).to(device)
+    # Load weights
+    print(f'Load weights from {args.ckpt}')
+    ckpt = torch.load(args.ckpt, map_location=device)
+    generator.load_state_dict(ckpt['ema'])
+
+    compute_fid(generator,
+                t0=1.0, t1=model_args.data.epsilon,
+                num_t=num_t,
+                z_dim=args.z_dim,
+                img_size=args.img_size,
+                dataname=args.dataname,
+                datasplit=args.datasplit,
+                device=device)
+
+    # fid_from_dset(device=device)

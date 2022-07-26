@@ -18,9 +18,9 @@ from torchvision.utils import save_image
 from tqdm import tqdm
 
 from models.tunet import TUnet
-from models.utils import save_ckpt, interpolate_model
+from models.utils import save_ckpt, interpolate_model, load_ddpm_ckpt
 from utils.data_helper import data_sampler, sample_data
-from utils.dataset import H5Data, split_list
+from utils.dataset import H5Data, split_list, ImageData
 from utils.distributed import setup, cleanup, reduce_loss_dict, all_reduce_mean
 from utils.helper import count_params, dict2namespace
 
@@ -30,41 +30,6 @@ try:
     import wandb
 except ImportError:
     wandb = None
-
-
-def eval(model, dataloader, criterion,
-         device, config, epoch=-1):
-    t_dim = config['data']['t_dim']
-    t_step = config['data']['t_step']
-    num_t = math.ceil(t_dim / t_step)
-    logname = config['log']['logname']
-    # prepare log dir
-    base_dir = f'exp/{logname}/'
-    save_img_dir = f'{base_dir}/figs'
-    os.makedirs(save_img_dir, exist_ok=True)
-
-    t0, t1 = 1., config['data']['epsilon']
-    timesteps = torch.linspace(t0, t1, num_t, device=device)
-    model.eval()
-
-    with torch.no_grad():
-        test_err = 0
-        for states in dataloader:
-            states = states.to(device)
-            in_state = states[:,:,0]
-
-            pred = model(in_state, timesteps)
-            loss = criterion(pred, states)
-
-            test_err += loss
-    test_err /= len(dataloader)
-    if device == 0:
-        print(f'MSE of the whole trajectory: {test_err}')
-        save_image(pred[:, :, -1] * 0.5 + 0.5,
-                   f'{save_img_dir}/pred_test_{epoch}.png')
-        save_image(states[:, :, -1] * 0.5 + 0.5,
-                   f'{save_img_dir}/truth_test_{epoch}.png')
-    return test_err
 
 
 def train(model, model_ema,
@@ -102,22 +67,23 @@ def train(model, model_ema,
 
     # prepare time input
     t0, t1 = 1., config['data']['epsilon']
-    timesteps = torch.linspace(t0, t1, num_t, device=device)
+    timesteps = torch.linspace(t0, t1, num_t, device=device) * 999
 
     # training
-    model.train()
+
     pbar = tqdm(range(config['training']['n_iters']), dynamic_ncols=True)
     use_time_conv = config['model']['time_conv']
     log_dict = {}
     dataloader = sample_data(dataloader)
 
     for e in pbar:
+        model.train()
         states = next(dataloader)
         states = states.to(device)
         in_state = states[:, :, 0]
 
         pred = model(in_state, timesteps)
-        if use_time_conv:
+        if not use_time_conv:
             loss = criterion(pred[:, :, -1], states[:, :, -1])
         else:
             loss = criterion(pred, states)
@@ -141,7 +107,12 @@ def train(model, model_ema,
         }
 
         # Update moving average of the model parameters
-        interpolate_model(model_ema, model, beta=ema_decay)
+        # interpolate_model(model_ema, model, beta=ema_decay)
+        with torch.no_grad():
+            for p_ema, p in zip(model_ema.parameters(), model.parameters()):
+                p_ema.copy_(p.lerp(p_ema, ema_decay))
+            for b_ema, b in zip(model_ema.buffers(), model.buffers()):
+                b_ema.copy_(b)
 
         if e % save_step == 0:
             # memory_use = psutil.Process().memory_info().rss / (1024 * 1024)
@@ -158,15 +129,10 @@ def train(model, model_ema,
                 save_ckpt(save_path,
                           model=model, model_ema=model_ema,
                           optim=optimizer, args=args)
-                if config['eval']['test_fid'] and e > 0:
-                    fid_score = compute_fid(model_ema, t0, t1, num_t, device=device)
-                    log_state['FID'] = fid_score
-            # eval on validation set
-            if valloader:
-                val_err = eval(model_ema, valloader, criterion,
-                               device, config, epoch=e)
-                val_err_avg = all_reduce_mean(val_err)
-                log_state['val MSE'] = val_err_avg
+
+            # if config['eval']['test_fid'] and e > 0 and device == 0:
+            #     fid_score = compute_fid(model, t0, t1, num_t, device=device)
+            #     log_state['FID'] = fid_score
         if use_wandb and wandb:
             wandb.log(log_state)
 
@@ -185,14 +151,20 @@ def run(train_loader, test_loader,
     # create model
     model_args = dict2namespace(config)
     model = TUnet(model_args).to(device)
-    model_ema = copy.deepcopy(model).eval()
+    model_ema = copy.deepcopy(model)
+    model_ema.eval()
     model_ema.requires_grad_(False)
 
+    # initialize model
     if args.ckpt:
         ckpt = torch.load(args.ckpt)
         model.load_state_dict(ckpt['model'])
         model_ema.load_state_dict(ckpt['ema'])
         print(f'Load weights from {args.ckpt}')
+    elif 'ddpm_ckpt' in config['model']:
+        ckpt = torch.load(model_args.model.ddpm_ckpt)
+        load_ddpm_ckpt(model, ckpt['model'], prefix='module.')
+        print(f'Initialize model from pretrained DDPM {model_args.model.ddpm_ckpt}')
 
     num_params = count_params(model)
     print(f'number of parameters: {num_params}')
@@ -202,10 +174,10 @@ def run(train_loader, test_loader,
         model = DDP(model, device_ids=[device], broadcast_buffers=False)
     # define optimizer and criterion
     optimizer = Adam(model.parameters(), lr=config['optim']['lr'])
-    scheduler1 = LinearLR(optimizer, start_factor=0.01, total_iters=config['optim']['warmup'])
+    scheduler1 = LinearLR(optimizer, start_factor=0.001, total_iters=config['optim']['warmup'])
     scheduler2 = MultiStepLR(optimizer,
-                            milestones=config['optim']['milestone'],
-                            gamma=0.5)
+                             milestones=config['optim']['milestone'],
+                             gamma=0.5)
     scheduler = ChainedScheduler([scheduler1, scheduler2])
     if config['training']['loss'] == 'L1':
         criterion = nn.L1Loss()
@@ -251,6 +223,9 @@ def subprocess_fn(rank, args):
     #     2: [20],
     #     3: [30]
     # }
+    # trainset = ImageData(config['data']['datapath'],
+    #                      config['data']['t_step'],
+    #                      index=idx_dict[rank], dir_type=dir_type)
     trainset = H5Data(config['data']['datapath'],
                       config['data']['t_step'],
                       num_sample, index=idx_dict[rank], dir_type=dir_type)

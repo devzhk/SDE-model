@@ -44,19 +44,34 @@ class myOdeData(Dataset):
 
 
 class ImageData(Dataset):
-    def __init__(self, datapath, t_step, num_sample=None):
+    def __init__(self, data_dir, t_step, index=[0,], dir_type=None):
         super(ImageData, self).__init__()
-        raw_data = torch.load(datapath)
-        # N, T, C, H, W
-        if num_sample is None:
-            self.data = raw_data[:, 0::t_step]
+        self.data_dir = data_dir
+        self.t_step = t_step
+        self.index = index
+        self.dir_type = dir_type
+        if dir_type == 'subfolder':
+            datapath = os.path.join(data_dir, f'seed{index[0]}', f'ode_data_sd{index[0]}.h5')
         else:
-            self.data = raw_data[:num_sample, 0::t_step]
-        self.num_sample = self.data.shape[0]
-        # N, C, T, H, W
+            datapath = os.path.join(data_dir, f'ode_data_sd{index[0]}.h5')
+        with h5py.File(datapath, 'r') as f:
+            num_per_file = len(f['data_t33'])
+        self.num_sample = len(index) * num_per_file
+        self.num_per_file = num_per_file
 
     def __getitem__(self, idx):
-        return self.data[idx].permute(1, 0, 2, 3)
+        file_idx = idx // self.num_per_file
+        data_idx = idx % self.num_per_file
+        if self.dir_type == 'subfolder':
+            datapath = os.path.join(self.data_dir,
+                                    f'seed{self.index[file_idx]}',
+                                    f'ode_data_sd{self.index[file_idx]}.h5')
+        else:
+            datapath = os.path.join(self.data_dir,
+                                    f'ode_data_sd{self.index[file_idx]}.h5')
+        with h5py.File(datapath, 'r') as f:
+            data = f['data_t33'][data_idx]
+        return data
 
     def __len__(self):
         return self.num_sample

@@ -21,3 +21,9 @@ Run python script
 ```bash
 python3 download_data.py
 ```
+
+## Train
+
+```bash
+python3 train_image.py
+```

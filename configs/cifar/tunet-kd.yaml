@@ -29,10 +29,11 @@ model:
     conv_size: 3
     num_modes: 2
     ema_rate: 0.995
+    ddpm_ckpt: ckpts/checkpoint_14.pth
 
 training:
     start_iter: 0
-    n_iters: 50_001
+    n_iters: 100_001
     batchsize: 64
     loss: L1
 
@@ -42,16 +43,16 @@ eval:
 
 optim:
     optimizer: 'Adam'
-    lr: 0.00002  # 2e-4
+    lr: 0.0002  # 2e-4
     beta1: 0.9
     beta2: 0.98
     eps: 0.00000001  # 1e-8
-    milestone: [10_000, 20_00, 40_000]
-    warmup: 100
+    milestone: [80_000, 100_000]
+    warmup: 5000
     grad_clip: 1.
 
 log:
-    logname: cifar-tunet-1064k-kd
+    logname: cifar-tunet-1064k-kd-ddpm
     entity: hzzheng
     project: Diffusion-CIFAR10
-    group: TUnet-1064k-kd
+    group: TUnet-1064k-kd-ddpm

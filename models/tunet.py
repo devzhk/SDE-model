@@ -109,6 +109,7 @@ class TUnet(nn.Module):
       # Input is in [0, 1]
       h = 2 * x - 1.
 
+    inp_noise = h[:, :, None, :, :]
     # Downsampling block
     hs = [modules[m_idx](h, temb)]
     m_idx += 1
@@ -157,5 +158,5 @@ class TUnet(nn.Module):
     h = modules[m_idx](h)
     m_idx += 1
     assert m_idx == len(modules)
-
-    return h
+    pred = inp_noise - h
+    return pred

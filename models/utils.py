@@ -1,4 +1,5 @@
 import torch
+import re
 
 
 def interpolate_model(model_ema, model, beta=0.999):
@@ -36,3 +37,26 @@ def save_ckpt(path,
 
     torch.save(state_dict, ckpt_path)
     print(f'checkpoint saved at {ckpt_path}')
+
+
+def load_ddpm_ckpt(model, state_dict, prefix=''):
+    dirct_copy_list = ['GroupNorm_', 'Dense_', 'NIN_']
+    with torch.no_grad():
+        for name, param in model.named_parameters():
+            if re.match(r'\w*all_modules\.[0-1]\.[a-z]+', name):
+                param.copy_(state_dict[prefix + name])
+            elif 'all_modules.2.proj' in name:
+                key = prefix + name.replace('.proj', '')
+                param.copy_(state_dict[key])
+            elif 'all_modules.2.Dense_0' in name:
+                continue
+            elif any(True for module in dirct_copy_list if module in name):
+                key = prefix + name
+                param.copy_(state_dict[key])
+            elif 'Conv_' in name:
+                key = prefix + name
+                param.copy_(state_dict[key].reshape(param.shape))
+            else:
+                key = prefix + name
+                # print(state_dict[key].shape)            
+                param.copy_(state_dict[key].reshape(param.shape))
